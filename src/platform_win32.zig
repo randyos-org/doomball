@@ -2,7 +2,7 @@
 const std = @import("std");
 const platform = @import("platform.zig");
 
-const WINAPI: std.builtin.CallingConvention = .winapi;
+const WINAPI: std.lang.CallingConvention = .winapi;
 const HWND = *anyopaque;
 const HINSTANCE = *anyopaque;
 const HDC = *anyopaque;

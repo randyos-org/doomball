@@ -1,0 +1,13 @@
+# Files that CI builds or runs but that do not change the shipped game: a
+# change to them is tested but makes no release by itself.
+# One bash `case` glob per line, matched against the path from the repo
+# root (`*` also matches `/`). Lines starting with # and blank lines are
+# ignored.
+
+# line endings at checkout, which the tests can see
+.gitattributes
+# CI's workflows, lists and scripts, and the release notes' sections
+.github/*
+# the scripts agents land changes with
+tools/agent/*
+.claude/*

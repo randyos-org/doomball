@@ -1,41 +1,29 @@
 # doomball
 
-Doom-themed pinball, written in Zig (requires Zig 0.17.1). Shoot the
-ball past demon bumpers and keep it out of the drain.
+Doom-themed pinball, written in Zig (requires Zig 0.17.1). Shoot the ball past demon bumpers and keep it out of the drain.
 
 ## Build & run
 
-```
+```sh
 zig build run                      # native; Windows opens a Win32 window
 zig build -Dtarget=x86_64-windows  # cross-compile a Windows exe
 zig build test                     # unit tests
 ```
 
-Every push to `main`, including a merged pull request, runs the Windows release
-workflow. It tests the game, builds an optimized Windows executable with Zig
-0.17.1, and publishes `doomball-windows-x86_64.exe` to a GitHub Release. Its
-tag is `v` followed by the `.version` in `build.zig.zon` (initially `v1.0.0`)
-and points to the tested commit.
+Controls: `Space` hold/release = plunger, `Left`/`Z`/`Shift` and `Right`/`/`/`Shift` = flippers, `Enter`/`Space` = restart after game over, `Esc` = quit.
 
-Bump `.version` to the next `MAJOR.MINOR.PATCH` before merging a new release.
-If that tag already points to a different commit, the workflow builds and
-tests but does not publish or move the tag. A rerun for the tagged commit can
-retry publishing. Pushing a `v*` tag also runs the workflow; the tag must
-match the version in the tagged commit's `build.zig.zon`.
+## Releases
 
-Controls: `Space` hold/release = plunger, `Left`/`Z`/`Shift` and
-`Right`/`/`/`Shift` = flippers, `Enter`/`Space` = restart after game over, `Esc` = quit.
+Releases are on the [releases page](https://github.com/randyos-org/doomball/releases): `doomball-vVERSION-x86_64-windows.exe` and `doomball-vVERSION-aarch64-windows.exe`, built for each architecture's baseline CPU, and a `SHA256SUMS` file of them. The v1.0.0 exe was built for the CPU of the machine that built it and stops with an illegal instruction on many others; use v1.0.1 or later.
+
+Work goes on a branch from `dev` and reaches `dev` through a pull request; `main` only takes releases, through the standing pull request from `dev` to `main`. CI (`.github/workflows/ci.yml`) runs for that pull request, for pushes to `main` and by hand (`gh workflow run CI --ref BRANCH`), not for `dev`. When `main` gets a version (`build.zig.zon`) that has no tag and something a release ships has changed since the last tag, CI tags it, publishes the release and begins the next patch version on `dev`. Never tag or publish by hand.
 
 ## Portability
 
-Like doomgeneric, the game core (`src/game.zig`, `src/render.zig`) is fully
-platform independent: it renders into a 240x360 `0x00RRGGBB` framebuffer and
-reads a small `Input` struct. A port only implements the `Platform` struct in
-`src/platform.zig` (init, shutdown, ticks, sleep, poll input, present):
+Like doomgeneric, the game core (`src/game.zig`, `src/render.zig`) is fully platform independent: it renders into a 240x360 `0x00RRGGBB` framebuffer and reads a small `Input` struct. A port only implements the `Platform` struct in `src/platform.zig` (init, shutdown, ticks, sleep, poll input, present):
 
-- `src/platform_win32.zig` – Windows (Win32 + GDI, no dependencies)
-- `src/platform_headless.zig` – scripted input, writes `doomball.ppm`
-  (default on non-Windows; `zig build run -Dframes=<n>`)
+- `src/platform_win32.zig`: Windows (Win32 + GDI, no dependencies)
+- `src/platform_headless.zig`: scripted input, writes `doomball.ppm` (default on non-Windows; `zig build run -Dframes=<n>`, or `-Dbackend=headless` on Windows)
 
 Select a backend with `-Dbackend=win32|headless`, and add new ones in `build.zig`/`src/main.zig`.
 

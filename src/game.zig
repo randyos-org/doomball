@@ -277,9 +277,9 @@ pub const Game = struct {
         var buf: [32]u8 = undefined;
         const title = "DOOMBALL";
         cv.text(title, 120 - @divTrunc(render_mod.Canvas.textWidth(title, 2), 2), 38, 2, c_blood);
-        const sc = std.fmt.bufPrint(&buf, "SCORE {d}", .{self.score}) catch "";
+        const sc = std.mem.print(&buf, "SCORE {d}", .{self.score}) catch "";
         cv.text(sc, 120 - @divTrunc(render_mod.Canvas.textWidth(sc, 1), 2), 58, 1, c_gold);
-        const bl = std.fmt.bufPrint(&buf, "BALLS {d}", .{self.balls_left}) catch "";
+        const bl = std.mem.print(&buf, "BALLS {d}", .{self.balls_left}) catch "";
         cv.text(bl, 120 - @divTrunc(render_mod.Canvas.textWidth(bl, 1), 2), 68, 1, c_gold);
 
         if (self.phase == .game_over) {

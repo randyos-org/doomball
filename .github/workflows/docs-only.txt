@@ -1,0 +1,10 @@
+# Documentation: a pull request that only changes these files (and those of
+# no-ci.txt) is linted and tested on one platform, and not compiled. A change
+# to them alone makes no release.
+# One bash `case` glob per line, matched against the path from the repo
+# root (`*` also matches `/`). Lines starting with # and blank lines are
+# ignored.
+
+*.md
+.markdownlint-cli2.jsonc
+.markdownlint.jsonc
