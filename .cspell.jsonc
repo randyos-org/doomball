@@ -1,0 +1,28 @@
+{
+  "version": "0.2",
+  "ignorePaths": [
+    ".cspell.json*",
+    ".git/**",
+    "*.code-workspace",
+    ".gitignore",
+    ".local-gitignore",
+    "zig-pkg/**",
+    ".zig-cache*/**",
+    "zig-out/**",
+    "**/node_modules/**"
+  ],
+  "dictionaryDefinitions": [
+    {
+      "name": "project-words",
+      "path": ".vscode/ltex.dictionary.en-US.txt",
+      "addWords": true
+    }
+  ],
+  "dictionaries": [
+    "bash",
+    "win32",
+    "zig",
+    "project-words"
+  ],
+  "allowCompoundWords": true
+}

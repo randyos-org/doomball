@@ -2,15 +2,13 @@
 const std = @import("std");
 const platform = @import("platform.zig");
 
-const WINAPI: std.builtin.CallingConvention = .winapi;
+const WINAPI: std.lang.CallingConvention = .winapi;
 const HWND = *anyopaque;
 const HINSTANCE = *anyopaque;
 const HDC = *anyopaque;
 const WPARAM = usize;
 const LPARAM = isize;
 const LRESULT = isize;
-
-const scale = 3;
 
 const WNDPROC = *const fn (HWND, u32, WPARAM, LPARAM) callconv(WINAPI) LRESULT;
 const POINT = extern struct { x: i32, y: i32 };
@@ -63,6 +61,34 @@ extern "kernel32" fn GetTickCount64() callconv(WINAPI) u64;
 extern "kernel32" fn Sleep(u32) callconv(WINAPI) void;
 extern "winmm" fn timeBeginPeriod(u32) callconv(WINAPI) u32;
 extern "winmm" fn timeEndPeriod(u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutOpen(*?*anyopaque, u32, *const WAVEFORMATEX, usize, usize, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutPrepareHeader(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutUnprepareHeader(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutWrite(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutReset(*anyopaque) callconv(WINAPI) u32;
+extern "winmm" fn waveOutClose(*anyopaque) callconv(WINAPI) u32;
+
+const WAVEFORMATEX = extern struct {
+    wFormatTag: u16 = 1,
+    nChannels: u16 = 1,
+    nSamplesPerSec: u32 = platform.audio_rate,
+    nAvgBytesPerSec: u32 = platform.audio_rate * 2,
+    nBlockAlign: u16 = 2,
+    wBitsPerSample: u16 = 16,
+    cbSize: u16 = 0,
+};
+const WAVEHDR = extern struct {
+    lpData: [*]u8,
+    dwBufferLength: u32,
+    dwBytesRecorded: u32 = 0,
+    dwUser: usize = 0,
+    dwFlags: u32 = 0,
+    dwLoops: u32 = 0,
+    lpNext: ?*WAVEHDR = null,
+    reserved: usize = 0,
+};
+const WAVE_MAPPER: u32 = 0xFFFFFFFF;
+const WHDR_DONE = 1;
 
 const WM_DESTROY = 0x0002;
 const WM_CLOSE = 0x0010;
@@ -72,6 +98,7 @@ const WM_SYSKEYDOWN = 0x0104;
 const WM_SYSKEYUP = 0x0105;
 const PM_REMOVE = 1;
 const WS_STYLE: u32 = 0x00C00000 | 0x00080000 | 0x00020000 | 0x10000000; // caption|sysmenu|minimize|visible
+const VK_SHIFT = 0x10;
 const VK_RETURN = 0x0D;
 const VK_ESCAPE = 0x1B;
 const VK_SPACE = 0x20;
@@ -83,6 +110,14 @@ const VK_LSHIFT = 0xA0;
 const VK_RSHIFT = 0xA1;
 
 var hwnd: ?HWND = null;
+
+// sound: a ring of buffers handed to waveOut, refilled once played
+const audio_buffers = 8;
+const audio_cap = 2048;
+var wave: ?*anyopaque = null;
+var buffers: [audio_buffers][audio_cap]i16 = undefined;
+var headers: [audio_buffers]WAVEHDR = undefined;
+var queued: [audio_buffers]bool = @splat(false);
 var keys: [256]bool = @splat(false);
 var quit = false;
 
@@ -93,16 +128,17 @@ pub const impl = platform.Platform{
     .sleepMs = sleepMs,
     .pollInput = pollInput,
     .present = present,
+    .queueAudio = queueAudio,
 };
 
 fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
     switch (msg) {
         WM_KEYDOWN, WM_SYSKEYDOWN => {
-            if (wp < keys.len) keys[wp] = true;
+            setKey(wp, lp, true);
             return 0;
         },
         WM_KEYUP, WM_SYSKEYUP => {
-            if (wp < keys.len) keys[wp] = false;
+            setKey(wp, lp, false);
             return 0;
         },
         WM_CLOSE => {
@@ -118,6 +154,16 @@ fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
     }
 }
 
+/// Both Shift keys arrive as VK_SHIFT; the scan code tells them apart.
+fn setKey(wp: WPARAM, lp: LPARAM, down: bool) void {
+    const scan_rshift = 0x36;
+    const vk: WPARAM = if (wp == VK_SHIFT)
+        (if ((lp >> 16) & 0xFF == scan_rshift) VK_RSHIFT else VK_LSHIFT)
+    else
+        wp;
+    if (vk < keys.len) keys[vk] = down;
+}
+
 fn init() anyerror!void {
     const inst = GetModuleHandleW(null);
     const class_name = std.unicode.utf8ToUtf16LeStringLiteral("DoomballWindow");
@@ -129,16 +175,61 @@ fn init() anyerror!void {
     };
     if (RegisterClassExW(&wc) == 0) return error.RegisterClassFailed;
 
-    var r = RECT{ .left = 0, .top = 0, .right = platform.width * scale, .bottom = platform.height * scale };
+    var r = RECT{ .left = 0, .top = 0, .right = platform.width, .bottom = platform.height };
     _ = AdjustWindowRect(&r, WS_STYLE, 0);
     hwnd = CreateWindowExW(0, class_name, std.unicode.utf8ToUtf16LeStringLiteral("Doomball"), WS_STYLE, 100, 50, r.right - r.left, r.bottom - r.top, null, null, inst, null);
     if (hwnd == null) return error.CreateWindowFailed;
     _ = ShowWindow(hwnd.?, 5);
     _ = timeBeginPeriod(1);
+    openAudio();
 }
 
 fn shutdown() void {
+    if (wave) |w| {
+        _ = waveOutReset(w);
+        for (&headers, &queued) |*hd, *q| if (q.*) {
+            _ = waveOutUnprepareHeader(w, hd, @sizeOf(WAVEHDR));
+            q.* = false;
+        };
+        _ = waveOutClose(w);
+        wave = null;
+    }
     _ = timeEndPeriod(1);
+}
+
+/// No sound device leaves the game silent.
+fn openAudio() void {
+    const fmt = WAVEFORMATEX{};
+    if (waveOutOpen(&wave, WAVE_MAPPER, &fmt, 0, 0, 0) != 0) {
+        wave = null;
+        return;
+    }
+    // a little silence ahead, so a late frame does not starve the device
+    const silence: [512]i16 = @splat(0);
+    queueAudio(&silence);
+    queueAudio(&silence);
+}
+
+fn queueAudio(samples: []const i16) void {
+    const w = wave orelse return;
+    var free: ?usize = null;
+    for (&headers, &queued, 0..) |*hd, *q, i| {
+        if (q.* and hd.dwFlags & WHDR_DONE != 0) {
+            _ = waveOutUnprepareHeader(w, hd, @sizeOf(WAVEHDR));
+            q.* = false;
+        }
+        if (!q.* and free == null) free = i;
+    }
+    const i = free orelse return;
+    const n = @min(samples.len, audio_cap);
+    @memcpy(buffers[i][0..n], samples[0..n]);
+    headers[i] = .{ .lpData = @ptrCast(&buffers[i]), .dwBufferLength = @intCast(n * 2) };
+    if (waveOutPrepareHeader(w, &headers[i], @sizeOf(WAVEHDR)) != 0) return;
+    if (waveOutWrite(w, &headers[i], @sizeOf(WAVEHDR)) != 0) {
+        _ = waveOutUnprepareHeader(w, &headers[i], @sizeOf(WAVEHDR));
+        return;
+    }
+    queued[i] = true;
 }
 
 fn ticksMs() u64 {
@@ -169,5 +260,5 @@ fn present(pixels: []const u32) void {
     const dc = GetDC(h) orelse return;
     defer _ = ReleaseDC(h, dc);
     const bmi = BITMAPINFOHEADER{ .biWidth = platform.width, .biHeight = -platform.height };
-    _ = StretchDIBits(dc, 0, 0, platform.width * scale, platform.height * scale, 0, 0, platform.width, platform.height, pixels.ptr, &bmi, 0, 0x00CC0020);
+    _ = StretchDIBits(dc, 0, 0, platform.width, platform.height, 0, 0, platform.width, platform.height, pixels.ptr, &bmi, 0, 0x00CC0020);
 }

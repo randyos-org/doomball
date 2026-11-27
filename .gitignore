@@ -1,4 +1,13 @@
-zig-out/
-.zig-cache/
+# Zig
+.zig-cache*/
 zig-cache/
+zig-out/
+*.o
+zig-pkg/
+.zigversion
+
+# the headless backend's last frame
 *.ppm
+*.log
+
+/doom1.wad*

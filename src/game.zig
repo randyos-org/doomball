@@ -1,348 +1,365 @@
-//! Platform-independent pinball game: physics, rules and software rendering.
+//! The rules: serving, the plunger, scoring, draining and game over, on top
+//! of the physics world.
 const std = @import("std");
 const platform = @import("platform.zig");
-const render = @import("render.zig");
+const physics = @import("physics.zig");
+const table = @import("table.zig");
+const missions = @import("missions.zig");
+const demons = @import("demons.zig");
+const multiball = @import("multiball.zig");
+const audio = @import("audio.zig");
 
-pub const W: f32 = platform.width;
-pub const H: f32 = platform.height;
-
-const gravity: f32 = 420;
-const ball_r: f32 = 4;
-const substeps = 10;
-const flipper_len: f32 = 32;
-const flipper_r: f32 = 3;
-const flipper_rest: f32 = 0.52;
-const flipper_up: f32 = -0.52;
-const flipper_speed: f32 = 22;
-const lane_x: f32 = 214;
-const start_balls = 3;
-
-const Vec = struct {
-    x: f32,
-    y: f32,
-
-    fn add(a: Vec, b: Vec) Vec {
-        return .{ .x = a.x + b.x, .y = a.y + b.y };
-    }
-    fn sub(a: Vec, b: Vec) Vec {
-        return .{ .x = a.x - b.x, .y = a.y - b.y };
-    }
-    fn mul(a: Vec, s: f32) Vec {
-        return .{ .x = a.x * s, .y = a.y * s };
-    }
-    fn dot(a: Vec, b: Vec) f32 {
-        return a.x * b.x + a.y * b.y;
-    }
-    fn len(a: Vec) f32 {
-        return @sqrt(a.dot(a));
-    }
-};
-
-const Segment = struct { a: Vec, b: Vec };
-
-const Bumper = struct { pos: Vec, r: f32, flash: f32 = 0 };
-
-const Flipper = struct {
-    pivot: Vec,
-    dir: f32, // +1: tip points right, -1: tip points left
-    angle: f32 = flipper_rest,
-    omega: f32 = 0,
-
-    fn tip(self: Flipper) Vec {
-        return self.tipAt(self.angle);
-    }
-    fn tipAt(self: Flipper, a: f32) Vec {
-        return .{ .x = self.pivot.x + self.dir * flipper_len * @cos(a), .y = self.pivot.y + flipper_len * @sin(a) };
-    }
-    fn step(self: *Flipper, pressed: bool, dt: f32) void {
-        const target: f32 = if (pressed) flipper_up else flipper_rest;
-        const old = self.angle;
-        const d = target - self.angle;
-        const max = flipper_speed * dt;
-        self.angle += std.math.clamp(d, -max, max);
-        self.omega = (self.angle - old) / dt;
-    }
-};
-
-const arc_steps = 20;
-const static_segments = blk: {
-    var s: [arc_steps + 7]Segment = undefined;
-    var n: usize = 0;
-    var i: usize = 0;
-    while (i < arc_steps) : (i += 1) {
-        const t0 = std.math.pi * @as(f32, @floatFromInt(i)) / arc_steps;
-        const t1 = std.math.pi * @as(f32, @floatFromInt(i + 1)) / arc_steps;
-        s[n] = .{
-            .a = .{ .x = 120 + 110 * @cos(t0), .y = 120 - 110 * @sin(t0) },
-            .b = .{ .x = 120 + 110 * @cos(t1), .y = 120 - 110 * @sin(t1) },
-        };
-        n += 1;
-    }
-    s[n] = .{ .a = .{ .x = 10, .y = 120 }, .b = .{ .x = 10, .y = 240 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = 10, .y = 240 }, .b = .{ .x = 73, .y = 297 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = lane_x, .y = 240 }, .b = .{ .x = 151, .y = 297 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = 230, .y = 120 }, .b = .{ .x = 230, .y = 330 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = lane_x, .y = 150 }, .b = .{ .x = lane_x, .y = 240 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = lane_x, .y = 240 }, .b = .{ .x = lane_x, .y = 330 } };
-    n += 1;
-    s[n] = .{ .a = .{ .x = lane_x, .y = 330 }, .b = .{ .x = 230, .y = 330 } };
-    n += 1;
-    break :blk s;
-};
+pub const start_balls = 3;
 
 pub const Phase = enum { playing, game_over };
 
+/// A line of the panel's message log.
+pub const Message = struct {
+    text: [max_message]u8 = undefined,
+    len: u8 = 0,
+    /// seconds since it was said
+    age: f32 = 0,
+
+    pub fn str(m: *const Message) []const u8 {
+        return m.text[0..m.len];
+    }
+};
+/// what fits a line of the panel's log
+pub const max_message = 15;
+
+const key_names = [3][]const u8{ "RED KEY", "BLUE KEY", "YELLOW KEY" };
+const max_cues = 16;
+pub const log_lines = 6;
+
+/// Points for each event.
+pub const points = struct {
+    pub const bumper = 100;
+    pub const sling = 10;
+    pub const rollover = 50;
+    pub const lanes_done = 1000;
+    pub const target = 250;
+    pub const mission_target = 500;
+    pub const lock = 5000;
+};
+
 pub const Game = struct {
-    ball: Vec = .{ .x = 222, .y = 324 },
-    vel: Vec = .{ .x = 0, .y = 0 },
-    bumpers: [4]Bumper = .{
-        .{ .pos = .{ .x = 85, .y = 150 }, .r = 15 },
-        .{ .pos = .{ .x = 155, .y = 150 }, .r = 15 },
-        .{ .pos = .{ .x = 120, .y = 195 }, .r = 15 },
-        .{ .pos = .{ .x = 50, .y = 205 }, .r = 10 },
-    },
-    flippers: [2]Flipper = .{
-        .{ .pivot = .{ .x = 76, .y = 300 }, .dir = 1 },
-        .{ .pivot = .{ .x = 148, .y = 300 }, .dir = -1 },
-    },
+    world: physics.World = .{},
     score: u32 = 0,
+    /// balls still to play, the one in play included
     balls_left: u8 = start_balls,
     plunger: f32 = 0,
     phase: Phase = .playing,
     prev_start: bool = false,
     time: f32 = 0,
+    /// seconds each part stays lit after a hit
+    bumper_flash: [table.bumpers.len]f32 = @splat(0),
+    sling_flash: [2]f32 = @splat(0),
+    target_flash: [table.targets.len]f32 = @splat(0),
+    lanes_lit: [table.rollovers.len]bool = @splat(false),
+    missions: missions.Missions = .{},
+    demons: demons.Demons = .{},
+    multiball: multiball.Multiball = .{},
+    keys: [3]bool = @splat(false),
+    slain: u32 = 0,
+    /// newest first
+    log: [log_lines]Message = @splat(.{}),
+    /// the sounds of this frame
+    cues: [max_cues]audio.Cue = undefined,
+    n_cues: usize = 0,
+
+    pub fn init() Game {
+        var g = Game{};
+        g.serve();
+        g.say("SPACE: LAUNCH");
+        return g;
+    }
+
+    /// Adds a line to the message log, cut to `max_message` characters.
+    pub fn say(self: *Game, text: []const u8) void {
+        var i: usize = log_lines - 1;
+        while (i > 0) : (i -= 1) self.log[i] = self.log[i - 1];
+        const n = @min(text.len, max_message);
+        self.log[0] = .{ .len = @intCast(n) };
+        @memcpy(self.log[0].text[0..n], text[0..n]);
+    }
+
+    pub fn cueList(self: *const Game) []const audio.Cue {
+        return self.cues[0..self.n_cues];
+    }
+
+    fn cue(self: *Game, c: audio.Cue) void {
+        // one of each a frame is enough
+        for (self.cueList()) |have| if (have == c) return;
+        if (self.n_cues == max_cues) return;
+        self.cues[self.n_cues] = c;
+        self.n_cues += 1;
+    }
 
     pub fn update(self: *Game, in: platform.Input, dt: f32) void {
+        self.n_cues = 0;
         self.time += dt;
+        for (&self.log) |*m| m.age += dt;
         const start_edge = in.start and !self.prev_start;
         self.prev_start = in.start;
-
         if (self.phase == .game_over) {
-            if (start_edge or (in.plunger)) self.reset();
+            if (start_edge) self.reset();
             return;
         }
+        for (&self.bumper_flash) |*f| f.* = @max(0, f.* - dt);
+        for (&self.sling_flash) |*f| f.* = @max(0, f.* - dt);
+        for (&self.target_flash) |*f| f.* = @max(0, f.* - dt);
+        self.missionOutcome(self.missions.tick(dt));
 
-        for (&self.bumpers) |*b| b.flash = @max(0, b.flash - dt);
-
-        self.flippers[0].step(in.left, dt);
-        self.flippers[1].step(in.right, dt);
-
-        const in_lane = self.ball.x > lane_x and self.ball.y > 290;
         if (in.plunger) {
             self.plunger = @min(1, self.plunger + dt * 1.2);
         } else if (self.plunger > 0) {
-            if (in_lane and @abs(self.vel.y) < 60) self.vel.y = -(300 + 320 * self.plunger);
+            if (self.world.launch(self.plunger)) self.cue(.launch);
             self.plunger = 0;
         }
 
-        const h = dt / substeps;
-        for (0..substeps) |_| self.substep(h);
+        self.demons.update(dt, self.missions.rank);
+        self.world.demons = self.demons.circles();
+        if (self.multiball.update(&self.world, dt)) self.say("MULTIBALL OVER");
+        self.world.step(in.left, in.right, dt);
+        for (self.world.eventList()) |e| self.handle(e);
 
-        if (self.ball.y > H + 20) {
+        if (self.world.activeBalls() == 0 and !self.multiball.busy()) {
             self.balls_left -|= 1;
             if (self.balls_left == 0) {
                 self.phase = .game_over;
+                self.cue(.game_over);
+                self.say("GAME OVER");
+                self.say("ENTER: NEW GAME");
             } else {
+                self.cue(.drain);
+                self.say("BALL LOST");
+                self.missionOutcome(self.missions.drained());
                 self.serve();
             }
         }
     }
 
+    fn handle(self: *Game, e: physics.Event) void {
+        switch (e.kind) {
+            .bumper => {
+                // doubled during multiball
+                self.score += if (self.multiball.on) 2 * points.bumper else points.bumper;
+                self.cue(.bumper);
+                self.bumper_flash[e.id] = 0.15;
+                self.missionOutcome(self.missions.count(.barrage, 1));
+            },
+            .sling => {
+                self.score += points.sling;
+                self.cue(.sling);
+                self.sling_flash[e.id] = 0.12;
+            },
+            .rollover => {
+                self.score += points.rollover;
+                self.cue(.rollover);
+                self.lanes_lit[e.id] = true;
+                if (std.mem.allEqual(bool, &self.lanes_lit, true)) {
+                    self.score += points.lanes_done;
+                    self.lanes_lit = @splat(false);
+                    self.say("LANES COMPLETE");
+                    self.missionOutcome(self.missions.count(.lanes, 1));
+                }
+            },
+            .target => {
+                self.target_flash[e.id] = 0.3;
+                switch (table.targets[e.id].kind) {
+                    .mission => {
+                        self.score += points.mission_target;
+                        if (self.missions.start()) |s| {
+                            self.say(s.name);
+                            self.cue(.mission_start);
+                        } else self.cue(.target);
+                    },
+                    .key_red, .key_blue, .key_yellow => |k| {
+                        self.score += points.target;
+                        const i = @backingInt(k);
+                        self.cue(if (self.keys[i]) .target else .key);
+                        if (!self.keys[i]) {
+                            self.keys[i] = true;
+                            self.say(key_names[i]);
+                            self.missionOutcome(self.missions.count(.keys, 1));
+                            if (std.mem.allEqual(bool, &self.keys, true) and self.world.gate_closed and !self.multiball.on) {
+                                self.world.gate_closed = false;
+                                self.cue(.gate);
+                                self.say("GATE OPEN");
+                            }
+                        }
+                    },
+                }
+            },
+            .demon => switch (self.demons.hit(e.id, self.world.balls[e.ball].p)) {
+                .none => {},
+                .hurt => {
+                    self.score += demons.hit_points;
+                    self.cue(.demon_hurt);
+                },
+                .slain => {
+                    self.cue(.demon_slain);
+                    self.score += self.demons.list[e.id].kind.points();
+                    self.slain += 1;
+                    self.say("DEMON SLAIN");
+                    self.missionOutcome(self.missions.count(.purge, 1));
+                },
+            },
+            .lock => if (!self.multiball.on) {
+                self.score += points.lock;
+                self.multiball.start();
+                self.cue(.lock);
+                self.cue(.multiball);
+                self.keys = @splat(false);
+                self.say("MULTIBALL!");
+            },
+            .drain => if (self.multiball.saved()) {
+                self.cue(.saved);
+                self.say("BALL SAVED");
+            },
+            .flipper_up => self.cue(.flipper),
+            .wall, .rubber, .gate, .flipper => if (e.speed > 180) self.cue(.knock),
+        }
+    }
+
+    fn missionOutcome(self: *Game, o: missions.Outcome) void {
+        switch (o) {
+            .none => {},
+            .done => {
+                self.score += missions.bonus(self.missions.rank);
+                self.cue(.promoted);
+                self.say("MISSION DONE");
+                self.say("PROMOTED TO");
+                self.say(missions.ranks[self.missions.rank]);
+            },
+            .failed => {
+                self.cue(.mission_failed);
+                self.say("MISSION FAILED");
+            },
+        }
+    }
+
+    /// Whether target `i` shows lit: just hit, a key held, or the mission
+    /// target blinking for a mission to start.
+    pub fn targetLit(self: *const Game, i: usize) bool {
+        if (self.target_flash[i] > 0) return true;
+        return switch (table.targets[i].kind) {
+            .mission => self.missions.active == null and @mod(self.time, 0.8) < 0.4,
+            .key_red, .key_blue, .key_yellow => |k| self.keys[@backingInt(k)],
+        };
+    }
+
     fn serve(self: *Game) void {
-        self.ball = .{ .x = 222, .y = 324 };
-        self.vel = .{ .x = 0, .y = 0 };
+        for (&self.world.balls) |*b| {
+            if (b.active) continue;
+            b.* = .{ .active = true };
+            return;
+        }
     }
 
     pub fn reset(self: *Game) void {
-        self.* = .{};
+        self.* = init();
         self.prev_start = true;
-    }
-
-    fn substep(self: *Game, h: f32) void {
-        self.vel.y += gravity * h;
-        self.ball = self.ball.add(self.vel.mul(h));
-
-        for (static_segments) |s| self.collide(s.a, s.b, 1.0, .{ .x = 0, .y = 0 }, 0.45);
-
-        for (self.flippers) |f| {
-            const a = f.pivot;
-            const b = f.tip();
-            const ab = b.sub(a);
-            const t = std.math.clamp(self.ball.sub(a).dot(ab) / ab.dot(ab), 0, 1);
-            const ang_dir = Vec{ .x = -f.dir * @sin(f.angle), .y = @cos(f.angle) };
-            const sv = ang_dir.mul(t * flipper_len * f.omega);
-            self.collide(a, b, flipper_r, sv, 0.3);
-        }
-
-        for (&self.bumpers) |*bp| {
-            const d = self.ball.sub(bp.pos);
-            const dist = d.len();
-            const min = bp.r + ball_r;
-            if (dist < min and dist > 0.0001) {
-                const n = d.mul(1 / dist);
-                self.ball = bp.pos.add(n.mul(min));
-                const vn = self.vel.dot(n);
-                if (vn < 0) self.vel = self.vel.sub(n.mul(vn * 2));
-                self.vel = self.vel.add(n.mul(140));
-                self.score += 100;
-                bp.flash = 0.12;
-            }
-        }
-
-        const sp = self.vel.len();
-        if (sp > 900) self.vel = self.vel.mul(900 / sp);
-    }
-
-    fn collide(self: *Game, a: Vec, b: Vec, thick: f32, surf: Vec, restitution: f32) void {
-        const ab = b.sub(a);
-        const t = std.math.clamp(self.ball.sub(a).dot(ab) / ab.dot(ab), 0, 1);
-        const p = a.add(ab.mul(t));
-        const d = self.ball.sub(p);
-        const dist = d.len();
-        const min = ball_r + thick;
-        if (dist >= min or dist < 0.0001) return;
-        const n = d.mul(1 / dist);
-        self.ball = p.add(n.mul(min));
-        const vn = self.vel.sub(surf).dot(n);
-        if (vn < 0) self.vel = self.vel.sub(n.mul(vn * (1 + restitution)));
-    }
-
-    // ---- rendering ----
-
-    const c_bg: u32 = 0x1a0d08;
-    const c_brick: u32 = 0x3a1c10;
-    const c_wall: u32 = 0x8a8a8a;
-    const c_blood: u32 = 0xb01010;
-    const c_fire: u32 = 0xff8a1a;
-    const c_gold: u32 = 0xe8c030;
-
-    pub fn render(self: *const Game, pixels: []u32) void {
-        const cv = render_mod.Canvas{ .pixels = pixels, .w = platform.width, .h = platform.height };
-
-        var y: i32 = 0;
-        while (y < platform.height) : (y += 1) {
-            var x: i32 = 0;
-            while (x < platform.width) : (x += 1) {
-                const row = @divFloor(y, 12);
-                const off: i32 = if (@mod(row, 2) == 0) 0 else 12;
-                const mortar = @mod(y, 12) == 0 or @mod(x + off, 24) == 0;
-                cv.put(x, y, if (mortar) c_bg else c_brick);
-            }
-        }
-
-        // playfield interior
-        for (0..platform.height) |yy| {
-            for (0..platform.width) |xx| {
-                const fx: f32 = @floatFromInt(xx);
-                const fy: f32 = @floatFromInt(yy);
-                const dx = fx - 120;
-                const dy = fy - 120;
-                const inside_arc = fy >= 120 or (dx * dx + dy * dy < 110 * 110);
-                if (inside_arc and fx > 10 and fx < 230 and fy < 330) {
-                    const shade: u32 = 0x10 + @as(u32, @intCast(yy / 12));
-                    cv.put(@intCast(xx), @intCast(yy), (shade << 16) | ((shade / 4) << 8));
-                }
-            }
-        }
-
-        for (static_segments) |s| cv.line(s.a.x, s.a.y, s.b.x, s.b.y, 1.5, c_wall);
-
-        for (self.bumpers) |b| {
-            cv.disc(b.pos.x, b.pos.y, b.r, if (b.flash > 0) c_fire else c_blood);
-            cv.disc(b.pos.x, b.pos.y, b.r - 3, if (b.flash > 0) c_gold else 0x600808);
-            const e = b.r * 0.35;
-            cv.disc(b.pos.x - e, b.pos.y - 2, 1.8, c_gold);
-            cv.disc(b.pos.x + e, b.pos.y - 2, 1.8, c_gold);
-            cv.rect(@intFromFloat(b.pos.x - e), @intFromFloat(b.pos.y + 3), @intFromFloat(e * 2 + 1), 1, 0x000000);
-        }
-
-        for (self.flippers) |f| {
-            const t = f.tip();
-            cv.line(f.pivot.x, f.pivot.y, t.x, t.y, flipper_r, 0x4a8a3a);
-            cv.disc(f.pivot.x, f.pivot.y, flipper_r + 1, c_gold);
-        }
-
-        // plunger
-        const pl: i32 = @intFromFloat(self.plunger * 14);
-        cv.rect(217, 326 + pl, 10, 4, 0xaaaaaa);
-
-        cv.disc(self.ball.x, self.ball.y, ball_r, c_fire);
-        cv.disc(self.ball.x - 1, self.ball.y - 1, 2, 0xffee99);
-
-        var buf: [32]u8 = undefined;
-        const title = "DOOMBALL";
-        cv.text(title, 120 - @divTrunc(render_mod.Canvas.textWidth(title, 2), 2), 38, 2, c_blood);
-        const sc = std.fmt.bufPrint(&buf, "SCORE {d}", .{self.score}) catch "";
-        cv.text(sc, 120 - @divTrunc(render_mod.Canvas.textWidth(sc, 1), 2), 58, 1, c_gold);
-        const bl = std.fmt.bufPrint(&buf, "BALLS {d}", .{self.balls_left}) catch "";
-        cv.text(bl, 120 - @divTrunc(render_mod.Canvas.textWidth(bl, 1), 2), 68, 1, c_gold);
-
-        if (self.phase == .game_over) {
-            cv.rect(30, 150, 180, 50, 0x000000);
-            cv.text("GAME OVER", 120 - @divTrunc(render_mod.Canvas.textWidth("GAME OVER", 2), 2), 158, 2, c_blood);
-            cv.text("PRESS SPACE", 120 - @divTrunc(render_mod.Canvas.textWidth("PRESS SPACE", 1), 2), 182, 1, c_gold);
-        }
     }
 };
 
-const render_mod = render;
+const frame_dt = 1.0 / 60.0;
 
-test "ball starts in lane and plunger launches it upward" {
-    var g = Game{};
-    const dt = 1.0 / 60.0;
-    for (0..60) |_| g.update(.{ .plunger = true }, dt);
-    g.update(.{}, dt);
-    try std.testing.expect(g.vel.y < -100);
-    for (0..30) |_| g.update(.{}, dt);
-    try std.testing.expect(g.ball.y < 300);
+test "holding and releasing the plunger launches the ball" {
+    var g = Game.init();
+    for (0..30) |_| g.update(.{}, frame_dt);
+    for (0..60) |_| g.update(.{ .plunger = true }, frame_dt);
+    g.update(.{}, frame_dt);
+    try std.testing.expect(g.world.balls[0].v.y < -1000);
 }
 
-test "ball stays inside the table walls" {
-    var g = Game{};
-    const dt = 1.0 / 60.0;
-    for (0..60) |_| g.update(.{ .plunger = true }, dt);
-    for (0..600) |i| {
-        g.update(.{ .left = i % 40 < 10, .right = i % 50 < 10 }, dt);
-        try std.testing.expect(g.ball.x > 0 and g.ball.x < W);
-    }
-}
-
-test "draining all balls ends the game and start resets" {
-    var g = Game{};
-    const dt = 1.0 / 60.0;
-    for (0..60 * 120) |i| {
-        // launch whenever ball sits in the lane
-        const launch = g.ball.x > lane_x and g.ball.y > 290 and i % 90 < 80;
-        g.update(.{ .plunger = launch }, dt);
+test "draining every ball ends the game, and start begins a new one" {
+    var g = Game.init();
+    for (0..60 * 600) |i| {
+        // launch whenever a ball waits in the lane; never flip
+        g.update(.{ .plunger = i % 90 < 60 }, frame_dt);
         if (g.phase == .game_over) break;
     }
     try std.testing.expectEqual(Phase.game_over, g.phase);
-    g.update(.{ .start = true }, dt);
+    try std.testing.expect(g.score > 0);
+    g.update(.{ .start = true }, frame_dt);
     try std.testing.expectEqual(Phase.playing, g.phase);
     try std.testing.expectEqual(@as(u8, start_balls), g.balls_left);
 }
 
-test "flipper hits ball upward" {
-    var g = Game{};
-    g.ball = .{ .x = 90, .y = 300.5 };
-    g.vel = .{ .x = 0, .y = 0 };
-    const dt = 1.0 / 60.0;
-    var min_vy: f32 = 0;
-    for (0..30) |_| {
-        g.update(.{ .left = true }, dt);
-        min_vy = @min(min_vy, g.vel.y);
-    }
-    try std.testing.expect(min_vy < -100);
+test "the message log keeps the newest lines first, cut to fit" {
+    var g = Game.init();
+    g.say("ONE");
+    g.say("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    try std.testing.expectEqualStrings("ABCDEFGHIJKLMNO", g.log[0].str());
+    try std.testing.expectEqualStrings("ONE", g.log[1].str());
 }
 
-test "render fills framebuffer" {
-    var g = Game{};
-    var fb: [platform.width * platform.height]u32 = undefined;
-    g.render(&fb);
-    try std.testing.expect(fb[0] != 0);
+test "the mission target starts a mission, and finishing it promotes" {
+    var g = Game.init();
+    const mission = for (table.targets, 0..) |t, i| {
+        if (t.kind == .mission) break i;
+    } else unreachable;
+    g.handle(.{ .kind = .target, .id = @intCast(mission) });
+    try std.testing.expect(g.missions.active != null);
+    try std.testing.expectEqualStrings("BUMPER BARRAGE", g.log[0].str());
+    for (0..missions.specs[0].goal) |_| g.handle(.{ .kind = .bumper });
+    try std.testing.expectEqual(@as(u8, 1), g.missions.rank);
+    try std.testing.expectEqualStrings("CORPORAL", g.log[0].str());
+}
+
+test "a key is held once hit and counts toward finding the keys" {
+    var g = Game.init();
+    g.missions.next = 3;
+    _ = g.missions.start();
+    g.handle(.{ .kind = .target, .id = 0 });
+    g.handle(.{ .kind = .target, .id = 0 });
+    try std.testing.expect(g.keys[0] and g.targetLit(0));
+    try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
+}
+
+test "slaying a demon scores, counts, and purges the pit" {
+    var g = Game.init();
+    g.missions.next = 2;
+    _ = g.missions.start();
+    g.update(.{}, frame_dt);
+    const d = g.demons.list[1];
+    try std.testing.expectEqual(demons.Kind.crawler, d.kind);
+    g.world.balls[0].p = d.p.add(.{ .x = -20, .y = 0 });
+    g.handle(.{ .kind = .demon, .id = 1 });
+    g.demons.update(demons.pain_time + 0.01, 0);
+    g.handle(.{ .kind = .demon, .id = 1 });
+    try std.testing.expectEqual(@as(u32, 1), g.slain);
+    try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
+    try std.testing.expect(g.score >= demons.hit_points + demons.Kind.crawler.points());
+}
+
+test "the three keys open the gate, and the lock starts multiball" {
+    var g = Game.init();
+    for (0..3) |i| g.handle(.{ .kind = .target, .id = @intCast(i) });
+    try std.testing.expect(!g.world.gate_closed);
+    try std.testing.expectEqualStrings("GATE OPEN", g.log[0].str());
+    g.world.balls[0] = .{ .active = true, .locked = true, .p = table.lock_c };
+    g.handle(.{ .kind = .lock });
+    try std.testing.expect(g.multiball.on);
+    try std.testing.expect(!g.keys[0]);
+    for (0..60 * 3) |_| g.update(.{}, frame_dt);
+    try std.testing.expect(g.world.activeBalls() >= 2);
+    try std.testing.expectEqual(@as(u8, start_balls), g.balls_left);
+}
+
+test "events make their sounds, once a frame each" {
+    var g = Game.init();
+    g.update(.{}, frame_dt);
+    g.handle(.{ .kind = .bumper });
+    g.handle(.{ .kind = .bumper, .id = 1 });
+    g.handle(.{ .kind = .flipper_up });
+    try std.testing.expectEqualSlices(audio.Cue, &.{ .bumper, .flipper }, g.cueList());
+}
+
+test "completing the top lanes scores the bonus and clears them" {
+    var g = Game.init();
+    for (0..table.rollovers.len) |i| g.handle(.{ .kind = .rollover, .id = @intCast(i) });
+    try std.testing.expectEqual(@as(u32, points.rollover * 3 + points.lanes_done), g.score);
+    try std.testing.expect(!g.lanes_lit[0]);
 }

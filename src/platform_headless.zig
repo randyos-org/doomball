@@ -15,7 +15,10 @@ pub const impl = platform.Platform{
     .sleepMs = sleepMs,
     .pollInput = pollInput,
     .present = present,
+    .queueAudio = queueAudio,
 };
+
+fn queueAudio(_: []const i16) void {}
 
 fn init() anyerror!void {}
 
@@ -44,7 +47,7 @@ var ppm: [header_max + platform.width * platform.height * 3]u8 = undefined;
 const header_max = 32;
 
 fn shutdown() void {
-    const header = std.fmt.bufPrint(&ppm, "P6\n{d} {d}\n255\n", .{ platform.width, platform.height }) catch return;
+    const header = std.mem.print(&ppm, "P6\n{d} {d}\n255\n", .{ platform.width, platform.height }) catch return;
     var n = header.len;
     for (last) |px| {
         ppm[n] = @truncate(px >> 16);
