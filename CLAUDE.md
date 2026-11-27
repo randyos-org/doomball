@@ -1,12 +1,12 @@
 # Notes for coding agents
 
-What a coding agent working on doomball needs to know besides the code, the [readme](README.md) and the [issues](https://github.com/randyos-org/doomball/issues). Notes about one machine (paths, hosts, caches) go in `CLAUDE.local.md`, which is not committed. Mistakes made more than once are written down here so they are not made again.
+What a coding agent working on Doomball needs to know besides the code, the [readme](README.md) and the [issues](https://github.com/randyos-org/doomball/issues). Notes about one machine (paths, hosts, caches) go in `CLAUDE.local.md`, which is not committed. Mistakes made more than once are written down here so they are not made again.
 
 The repository's setup follows skein (chasingdaylight/skein), after zfls (cesiumlang/zfls) and rstd (randyos-org/rstd): when something here is missing, do it as they do.
 
 ## What doomball is
 
-Doom-themed pinball in Zig. The game core (`src/game.zig`, `src/render.zig`) draws into a framebuffer and reads an `Input` snapshot; each platform backend (`src/platform_*.zig`) implements `Platform` (`src/platform.zig`). Windows has a Win32 front end; every other platform builds the headless backend, which plays scripted input and writes `doomball.ppm`.
+Doom-themed pinball in Zig; [docs/design.md](docs/design.md) is where it is going (the 2.5D table, missions, demons, keys, sound). All art is original: `doom1.wad` (kept out of git) is a style reference only, since its license forbids derivative works. The game core (`src/game.zig`, `src/render.zig`) draws into a framebuffer and reads an `Input` snapshot; each platform backend (`src/platform_*.zig`) implements `Platform` (`src/platform.zig`). Windows has a Win32 front end; every other platform builds the headless backend, which plays scripted input and writes `doomball.ppm`.
 
 ## Rules
 
@@ -19,11 +19,11 @@ Doom-themed pinball in Zig. The game core (`src/game.zig`, `src/render.zig`) dra
 ## Git
 
 - `main` and `dev`. Work goes on a branch from `dev` and reaches `dev` through a pull request; `main` only takes releases, through the standing `dev` to `main` pull request, which emanspeaks merges. Nothing blocks `dev`: no check is required there and CI does not run for it.
-- A release is made by CI when `main` gets a version (`build.zig.zon`) that has no tag and something a release ships has changed since the last tag (not documentation or CI alone: `docs-only.txt` and `ci-only.txt` in `.github/workflows/`): it tags the commit, publishes one exe for each Windows target (built with `-Dcpu=baseline`: a release must never take the CPU features of the machine that builds it) and begins the next patch version on `dev`. Releases are not signed; skein's `ci.yml` has the jobs should they be. `.github/workflows/version.sh` lists and checks every place that states the version and sets them all (`version.sh set NEXT`); a new place that states the version goes into it. Never tag or publish by hand.
+- A release is made by CI when `main` gets a version (`build.zig.zon`) that has no tag and something a release ships has changed since the last tag (not documentation or CI alone: `docs-only.txt` and `ci-only.txt` in `.github/workflows/`): it tags the commit, publishes one EXE for each Windows target (built with `-Dcpu=baseline`: a release must never take the CPU features of the machine that builds it) and begins the next patch version on `dev`. Releases are not signed; skein's `ci.yml` has the jobs should they be. `.github/workflows/version.sh` lists and checks every place that states the version and sets them all (`version.sh set NEXT`); a new place that states the version goes into it. Never tag or publish by hand.
 - On GitHub, agents act as the GitHub App `randyos-agent`, never as emanspeaks: `GH_TOKEN="$(bash /c/scratch/github-apps/app-token.sh randyos-org)"` for `gh`, and `bash /c/scratch/github-apps/app-git.sh randyos-org <git arguments>` for commits, fetches and pushes, with the harness's AI attribution trailer. Never print, copy or commit anything in `/c/scratch/github-apps/randyos-org/`. The app administers the repository too (settings, rulesets, labels); what stays with emanspeaks is merging `dev` into `main`, and repository variables and secrets.
 - Commit messages are one short line (about 50 characters), with no body; rationale and test results go in the pull request or the issue.
 - Pull requests take the release-note labels of `.github/release.yml` (`fix`, `feature`, `performance`, `tests`, `refactor`, `ci`, `skip-changelog`); their titles are the release notes.
-- Before a commit, check `git diff --cached` and `git status` so a commit takes only your own changes. emanspeaks's uncommitted edits to `CLAUDE.md`, the LTeX files and the readme go into the next commit. After a merge, delete the branch, locally and on GitHub (GitHub deletes merged branches itself).
+- Before a commit, check `git diff --cached` and `git status` so that a commit takes only your own changes. emanspeaks's uncommitted edits to `CLAUDE.md`, the LTeX files and the readme go into the next commit. After a merge, delete the branch, locally and on GitHub (GitHub deletes merged branches itself).
 - `.local-gitignore` is this checkout's own ignore file (`git config core.excludesFile .local-gitignore`).
 
 ## Zig 0.17: what not to use

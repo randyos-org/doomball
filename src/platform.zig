@@ -2,8 +2,8 @@
 //! produces a 32-bit framebuffer and consumes a small Input snapshot. A port
 //! to a new OS only needs to implement the functions in `Platform`.
 
-pub const width = 240;
-pub const height = 360;
+pub const width = 640;
+pub const height = 480;
 
 pub const Input = struct {
     left: bool = false,
