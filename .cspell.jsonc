@@ -9,7 +9,9 @@
     "zig-pkg/**",
     ".zig-cache*/**",
     "zig-out/**",
-    "**/node_modules/**"
+    "**/node_modules/**",
+    // another project's
+    "vendor/**"
   ],
   "dictionaryDefinitions": [
     {

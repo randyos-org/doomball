@@ -4,5 +4,7 @@
     "zig-pkg/**",
     ".zig-cache/**",
     "zig-out/**",
+    // another project's, linted there
+    "vendor/**",
   ]
 }

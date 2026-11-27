@@ -1,8 +1,9 @@
 const std = @import("std");
+const rstd = @import("rstd");
 
 pub const Backend = enum { win32, headless };
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -23,6 +24,10 @@ pub fn build(b: *std.Build) void {
         root.linkSystemLibrary("gdi32", .{});
         root.linkSystemLibrary("winmm", .{});
     }
+    // rstd (vendor/rstd), for rgl as it grows (#28); no BLAS kernels, since
+    // nothing here does linear algebra
+    const rstd_mod = try rstd.buildutils.addRstd(b, target, null, false, .{ .optimize = optimize, .blas_cores = .none });
+    rstd_mod.addImportToModule(root);
     const exe = b.addExecutable(.{ .name = "doomball", .root_module = root });
     if (backend == .win32) exe.subsystem = .windows;
     b.installArtifact(exe);
@@ -31,10 +36,12 @@ pub fn build(b: *std.Build) void {
     if (b.option(u32, "frames", "Headless backend: number of frames to run")) |n| run.addArg(b.fmt("{d}", .{n}));
     b.step("run", "Run the game").dependOn(&run.step);
 
-    const tests = b.addTest(.{ .root_module = b.createModule(.{
+    const test_mod = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-    }) });
+    });
+    rstd_mod.addImportToModule(test_mod);
+    const tests = b.addTest(.{ .root_module = test_mod });
     b.step("test", "Run unit tests").dependOn(&b.addRunArtifact(tests).step);
 }
