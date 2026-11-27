@@ -12,6 +12,8 @@ const pal = @import("palette.zig");
 const prerender = @import("prerender.zig");
 const table = @import("table.zig");
 const panel = @import("panel.zig");
+const sprites = @import("sprites.zig");
+const demons = @import("demons.zig");
 const Game = @import("game.zig").Game;
 
 const Allocator = std.mem.Allocator;
@@ -72,6 +74,7 @@ pub const Renderer = struct {
         for (g.world.balls) |b| if (b.active and !b.locked) r.shadow(pixels, b.p);
         for (g.world.flippers) |f| r.flipper(pixels, f.spec.pivot, f.tip());
         r.plunger(pixels, g.plunger);
+        for (g.demons.list) |d| if (d.state != .away) r.demon(pixels, d);
         for (g.world.balls) |b| if (b.active) r.ball(pixels, b);
         panel.draw(g, pixels);
     }
@@ -142,6 +145,48 @@ pub const Renderer = struct {
                 pal.index(.steel, @intFromFloat(std.math.clamp(6 + refl.z * 9 + spec * 8, 0, 15)));
             r.depth[i] = hit.t;
             put(pixels, i, pal.lit(idx, 28));
+        };
+    }
+
+    /// A billboard standing on the table, depth-tested at its foot; a dying
+    /// demon sinks into the sludge, clipped at the floor.
+    fn demon(r: *Renderer, pixels: []u32, d: demons.Demon) void {
+        const frames = switch (d.kind) {
+            .brute => &sprites.brute,
+            .crawler => &sprites.crawler,
+        };
+        const spr = frames[@as(usize, @intFromFloat(d.stride / 9)) % 2];
+        const tall = d.kind.height();
+        const sink = if (d.state == .dying) tall * @min(1, d.timer / demons.death_time) else 0;
+        const cam = r.bg.cam;
+        const foot = cam.project(v3(d.p.x, d.p.y, -sink));
+        const head = cam.project(v3(d.p.x, d.p.y, tall - sink));
+        const floor_y = @min(foot.y, cam.project(v3(d.p.x, d.p.y, 0)).y);
+        const ppt = (foot.y - head.y) / @as(f32, @floatFromInt(spr.height()));
+        if (ppt <= 0) return;
+        const half = ppt * @as(f32, @floatFromInt(spr.width())) / 2;
+        var light = scene.light(v3(d.p.x, d.p.y, tall / 2), v3(0, 1, 0.6).norm(), foot.z, true);
+        if (d.state == .pain) light += 9;
+        if (d.state == .dying) light -= @intFromFloat(d.timer * 10);
+        const fw: f32 = @floatFromInt(w);
+        const fh: f32 = @floatFromInt(h);
+        const y0: usize = @intFromFloat(std.math.clamp(@floor(head.y), 0, fh));
+        const y1: usize = @intFromFloat(std.math.clamp(@ceil(floor_y), 0, fh));
+        const x0: usize = @intFromFloat(std.math.clamp(@floor(foot.x - half), 0, fw));
+        const x1: usize = @intFromFloat(std.math.clamp(@ceil(foot.x + half), 0, fw));
+        for (y0..y1) |y| for (x0..x1) |x| {
+            const fy = (@as(f32, @floatFromInt(y)) + 0.5 - head.y) / ppt;
+            const fx = (@as(f32, @floatFromInt(x)) + 0.5 - (foot.x - half)) / ppt;
+            if (fy < 0 or fx < 0) continue;
+            const row: usize = @intFromFloat(fy);
+            var col: usize = @intFromFloat(fx);
+            if (row >= spr.height() or col >= spr.width()) continue;
+            if (d.facing_left) col = spr.width() - 1 - col;
+            const t = spr.at(col, row) orelse continue;
+            const i = y * w + x;
+            if (foot.z >= r.depth[i]) continue;
+            r.depth[i] = foot.z;
+            put(pixels, i, pal.lit(t.i, if (t.glow) pal.full_light else light));
         };
     }
 

@@ -209,9 +209,11 @@ pub fn floor(p: V2) Floor {
     const pit = table.pit;
     if (p.x > pit.x0 and p.x < pit.x1 and p.y > pit.y0 and p.y < pit.y1) {
         const rim = p.x < pit.x0 + 8 or p.x > pit.x1 - 8 or p.y < pit.y0 + 8 or p.y > pit.y1 - 8;
-        return if (rim) .{ .i = tex.texel(.grate, x, y) } else .{ .i = tex.texel(.lava, x, y), .glow = true };
+        return if (rim) .{ .i = tex.texel(.grate, x, y) } else .{ .i = tex.texel(.sludge, x, y), .glow = true };
     }
-    // a sigil ring around the bumpers, and spokes
+    // the outlanes run with lava
+    if (p.y > 596 and p.y < 790 and (p.x < 42 or (p.x > 326 and p.x < 352))) return .{ .i = tex.texel(.lava, x, y), .glow = true };
+    // a sigil ring around the bumpers
     if (ring(p, v2(table.axis_x, 236), 80, 84)) return .{ .i = idx(.crimson, 11), .glow = true };
     if (lettering(p, title, title_x, 478, title_cell)) return .{ .i = idx(.blood, 10) };
     // hazard stripes on the apron
@@ -249,7 +251,7 @@ test "the solids include every part with two looks, in both looks" {
     for (1..obj.count) |o| try std.testing.expect(seen[o][0] and seen[o][1]);
 }
 
-test "the playfield has the pit's lava, the plunger lane's grate and the cabinet outside" {
+test "the playfield has the pit's sludge, the plunger lane's grate and the cabinet outside" {
     tex.init();
     try std.testing.expect(floor(v2(184, 400)).glow);
     try std.testing.expect(floor(v2(370, 600)).table);

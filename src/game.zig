@@ -5,6 +5,7 @@ const platform = @import("platform.zig");
 const physics = @import("physics.zig");
 const table = @import("table.zig");
 const missions = @import("missions.zig");
+const demons = @import("demons.zig");
 
 pub const start_balls = 3;
 
@@ -52,6 +53,7 @@ pub const Game = struct {
     target_flash: [table.targets.len]f32 = @splat(0),
     lanes_lit: [table.rollovers.len]bool = @splat(false),
     missions: missions.Missions = .{},
+    demons: demons.Demons = .{},
     keys: [3]bool = @splat(false),
     slain: u32 = 0,
     /// newest first
@@ -94,6 +96,8 @@ pub const Game = struct {
             self.plunger = 0;
         }
 
+        self.demons.update(dt, self.missions.rank);
+        self.world.demons = self.demons.circles();
         self.world.step(in.left, in.right, dt);
         for (self.world.eventList()) |e| self.handle(e);
 
@@ -150,7 +154,17 @@ pub const Game = struct {
                     },
                 }
             },
-            .wall, .rubber, .gate, .flipper, .flipper_up, .demon, .lock, .drain => {},
+            .demon => switch (self.demons.hit(e.id, self.world.balls[e.ball].p)) {
+                .none => {},
+                .hurt => self.score += demons.hit_points,
+                .slain => {
+                    self.score += self.demons.list[e.id].kind.points();
+                    self.slain += 1;
+                    self.say("DEMON SLAIN");
+                    self.missionOutcome(self.missions.count(.purge, 1));
+                },
+            },
+            .wall, .rubber, .gate, .flipper, .flipper_up, .lock, .drain => {},
         }
     }
 
@@ -240,6 +254,22 @@ test "a key is held once hit and counts toward finding the keys" {
     g.handle(.{ .kind = .target, .id = 0 });
     try std.testing.expect(g.keys[0] and g.targetLit(0));
     try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
+}
+
+test "slaying a demon scores, counts, and purges the pit" {
+    var g = Game.init();
+    g.missions.next = 2;
+    _ = g.missions.start();
+    g.update(.{}, frame_dt);
+    const d = g.demons.list[1];
+    try std.testing.expectEqual(demons.Kind.crawler, d.kind);
+    g.world.balls[0].p = d.p.add(.{ .x = -20, .y = 0 });
+    g.handle(.{ .kind = .demon, .id = 1 });
+    g.demons.update(demons.pain_time + 0.01, 0);
+    g.handle(.{ .kind = .demon, .id = 1 });
+    try std.testing.expectEqual(@as(u32, 1), g.slain);
+    try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
+    try std.testing.expect(g.score >= demons.hit_points + demons.Kind.crawler.points());
 }
 
 test "completing the top lanes scores the bonus and clears them" {
