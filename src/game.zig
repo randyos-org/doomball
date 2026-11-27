@@ -6,6 +6,7 @@ const physics = @import("physics.zig");
 const table = @import("table.zig");
 const missions = @import("missions.zig");
 const demons = @import("demons.zig");
+const multiball = @import("multiball.zig");
 
 pub const start_balls = 3;
 
@@ -36,6 +37,7 @@ pub const points = struct {
     pub const lanes_done = 1000;
     pub const target = 250;
     pub const mission_target = 500;
+    pub const lock = 5000;
 };
 
 pub const Game = struct {
@@ -54,6 +56,7 @@ pub const Game = struct {
     lanes_lit: [table.rollovers.len]bool = @splat(false),
     missions: missions.Missions = .{},
     demons: demons.Demons = .{},
+    multiball: multiball.Multiball = .{},
     keys: [3]bool = @splat(false),
     slain: u32 = 0,
     /// newest first
@@ -98,10 +101,11 @@ pub const Game = struct {
 
         self.demons.update(dt, self.missions.rank);
         self.world.demons = self.demons.circles();
+        if (self.multiball.update(&self.world, dt)) self.say("MULTIBALL OVER");
         self.world.step(in.left, in.right, dt);
         for (self.world.eventList()) |e| self.handle(e);
 
-        if (self.world.activeBalls() == 0) {
+        if (self.world.activeBalls() == 0 and !self.multiball.busy()) {
             self.balls_left -|= 1;
             if (self.balls_left == 0) {
                 self.phase = .game_over;
@@ -118,7 +122,8 @@ pub const Game = struct {
     fn handle(self: *Game, e: physics.Event) void {
         switch (e.kind) {
             .bumper => {
-                self.score += points.bumper;
+                // doubled during multiball
+                self.score += if (self.multiball.on) 2 * points.bumper else points.bumper;
                 self.bumper_flash[e.id] = 0.15;
                 self.missionOutcome(self.missions.count(.barrage, 1));
             },
@@ -150,6 +155,10 @@ pub const Game = struct {
                             self.keys[i] = true;
                             self.say(key_names[i]);
                             self.missionOutcome(self.missions.count(.keys, 1));
+                            if (std.mem.allEqual(bool, &self.keys, true) and self.world.gate_closed and !self.multiball.on) {
+                                self.world.gate_closed = false;
+                                self.say("GATE OPEN");
+                            }
                         }
                     },
                 }
@@ -164,7 +173,14 @@ pub const Game = struct {
                     self.missionOutcome(self.missions.count(.purge, 1));
                 },
             },
-            .wall, .rubber, .gate, .flipper, .flipper_up, .lock, .drain => {},
+            .lock => if (!self.multiball.on) {
+                self.score += points.lock;
+                self.multiball.start();
+                self.keys = @splat(false);
+                self.say("MULTIBALL!");
+            },
+            .drain => if (self.multiball.saved()) self.say("BALL SAVED"),
+            .wall, .rubber, .gate, .flipper, .flipper_up => {},
         }
     }
 
@@ -192,7 +208,11 @@ pub const Game = struct {
     }
 
     fn serve(self: *Game) void {
-        self.world.balls[0] = .{ .active = true };
+        for (&self.world.balls) |*b| {
+            if (b.active) continue;
+            b.* = .{ .active = true };
+            return;
+        }
     }
 
     pub fn reset(self: *Game) void {
@@ -270,6 +290,20 @@ test "slaying a demon scores, counts, and purges the pit" {
     try std.testing.expectEqual(@as(u32, 1), g.slain);
     try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
     try std.testing.expect(g.score >= demons.hit_points + demons.Kind.crawler.points());
+}
+
+test "the three keys open the gate, and the lock starts multiball" {
+    var g = Game.init();
+    for (0..3) |i| g.handle(.{ .kind = .target, .id = @intCast(i) });
+    try std.testing.expect(!g.world.gate_closed);
+    try std.testing.expectEqualStrings("GATE OPEN", g.log[0].str());
+    g.world.balls[0] = .{ .active = true, .locked = true, .p = table.lock_c };
+    g.handle(.{ .kind = .lock });
+    try std.testing.expect(g.multiball.on);
+    try std.testing.expect(!g.keys[0]);
+    for (0..60 * 3) |_| g.update(.{}, frame_dt);
+    try std.testing.expect(g.world.activeBalls() >= 2);
+    try std.testing.expectEqual(@as(u8, start_balls), g.balls_left);
 }
 
 test "completing the top lanes scores the bonus and clears them" {

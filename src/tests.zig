@@ -11,6 +11,7 @@ test {
     _ = @import("demons.zig");
     _ = @import("layout.zig");
     _ = @import("missions.zig");
+    _ = @import("multiball.zig");
     _ = @import("palette.zig");
     _ = @import("physics.zig");
     _ = @import("table.zig");
