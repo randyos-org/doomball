@@ -1,4 +1,4 @@
-# doomball
+# Doomball
 
 Doom-themed pinball, written in Zig (requires Zig 0.17.1). Shoot the ball past demon bumpers and keep it out of the drain.
 

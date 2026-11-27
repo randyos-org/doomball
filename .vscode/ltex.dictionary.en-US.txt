@@ -1,6 +1,7 @@
 Dbackend
 Dcpu
 Dframes
+doomball
 Doptimize
 Dtarget
 emanspeaks
@@ -23,3 +24,11 @@ WNDCLASSEXW
 WNDPROC
 zfls
 zfls's
+Zig
+
+doomgeneric
+readme
+chasingdaylight
+cesiumlang
+randyos-org
+framebuffer
