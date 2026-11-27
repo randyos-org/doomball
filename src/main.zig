@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     try p.init();
     defer p.shutdown();
 
-    var g = game.Game{};
+    var g = game.Game.init();
     var next = p.ticksMs();
     while (true) {
         const in = p.pollInput();
