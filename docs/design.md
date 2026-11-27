@@ -19,7 +19,7 @@ Real-time 3-D waits for rgl (randyos-org/rstd#817). Until then:
 
 ## Palette and light
 
-`palette.zig`: 16 ramps of 16 shades each (gray, brown, tan, blood red, orange, yellow, toxic green, moss, steel blue, violet, bone, rust, flesh, teal, deep red, fullbright). A texel is a palette index; 32 light levels map each index to a darker shade of its own ramp, so shading bands as in 8-bit renderers. Light is a sector level, minus distance falloff, plus nearby light sources (lava glow, lit bumpers).
+`palette.zig`: 16 ramps of 16 shades each (gray, brown, blue, blood red, orange, yellow, toxic green, moss, steel blue, violet, bone, rust, flesh, teal, deep red, fullbright). A texel is a palette index; 32 light levels map each index to a darker shade of its own ramp, so shading bands as in 8-bit renderers. Light is a sector level, minus distance falloff, plus nearby light sources (lava glow, lit bumpers).
 
 `textures.zig`: procedural 64x64 textures, deterministic: riveted tech panels, cracked hellstone, toxic sludge, rusted grating, marble with an inlaid sigil, blood-streaked metal.
 

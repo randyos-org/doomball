@@ -1,4 +1,9 @@
 test {
+    _ = @import("frame.zig");
+    _ = @import("prerender.zig");
+    _ = @import("scene.zig");
+    _ = @import("camera.zig");
+    _ = @import("raycast.zig");
     _ = @import("game.zig");
     _ = @import("layout.zig");
     _ = @import("palette.zig");

@@ -6,7 +6,7 @@ const std = @import("std");
 pub const Ramp = enum(u4) {
     gray,
     brown,
-    tan,
+    blue,
     blood,
     fire,
     yellow,
@@ -43,7 +43,7 @@ pub fn shadeOf(i: u8) u4 {
 const stops = [16][3]u32{
     .{ 0x060606, 0x5c5c5c, 0xe4e4e4 },
     .{ 0x0a0703, 0x5a3c20, 0xc8a070 },
-    .{ 0x0e0b06, 0x7a6444, 0xeadcb4 },
+    .{ 0x00030e, 0x1a3aa8, 0x96b8ff },
     .{ 0x0a0000, 0x7a0808, 0xff4a36 },
     .{ 0x120400, 0xb04408, 0xffbc48 },
     .{ 0x120e00, 0xa08810, 0xfff284 },

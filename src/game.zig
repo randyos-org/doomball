@@ -4,7 +4,6 @@ const std = @import("std");
 const platform = @import("platform.zig");
 const physics = @import("physics.zig");
 const table = @import("table.zig");
-const topdown = @import("topdown.zig");
 
 pub const start_balls = 3;
 
@@ -102,10 +101,6 @@ pub const Game = struct {
     pub fn reset(self: *Game) void {
         self.* = init();
         self.prev_start = true;
-    }
-
-    pub fn render(self: *const Game, pixels: []u32) void {
-        topdown.draw(self, pixels);
     }
 };
 
