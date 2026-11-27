@@ -60,3 +60,5 @@ doomball builds with Zig 0.17.1, whose standard library marks many older declara
 
 - In the Bash tool on this machine, a command line containing a single quote fails ("unexpected EOF while looking for matching") before it runs: put such a command in a script file and run the file.
 - The Win32 `doomball.exe` opens a window and runs until closed: never start it from a check or a script; use the headless backend.
+- On this machine `npx` is pnpm's shim, which exits 0 even when markdownlint or cspell report problems: read their summary line, as `land.sh` does.
+- Windows Error Reporting keeps a crashed process alive while it reports, so "still running" does not mean it did not crash; the Application event log ("Application Error") has the exception code.

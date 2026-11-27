@@ -35,8 +35,18 @@ test -s doomball.ppm && rm doomball.ppm
 for target in x86_64-windows aarch64-windows; do
   "$Z" build -Dtarget="$target" -Dcpu=baseline -Doptimize=fast --prefix "zig-out/$target"
 done
-npx --no-install markdownlint-cli2 "**/*.md" 2>&1 | tail -1
-npx --no-install cspell --no-progress "**/*.md" ".github/**" "src/**" "tools/**" 2>&1 | tail -1
+# pnpm's npx shim exits 0 whatever the tool does: the summaries are read instead
+lint() {
+  local out
+  out=$(npx --no-install "$@" 2>&1 || true)
+  echo "$out" | tail -1
+  case "$(echo "$out" | tail -1)" in
+    "Summary: 0 issues in 0 files" | "CSpell: Files checked: "*", Issues found: 0 in 0 files.") ;;
+    *) echo "$out"; echo "land.sh: $1 found problems"; exit 1 ;;
+  esac
+}
+lint markdownlint-cli2 "**/*.md"
+lint cspell --no-progress "**/*.md" ".github/**" "src/**" "tools/**"
 
 # .claude/ may be in the checkout's own ignore file: its paths are added past it
 for path in "$@"; do
