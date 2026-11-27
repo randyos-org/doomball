@@ -2,7 +2,8 @@ name: CI
 
 # Modeled on skein's ci.yml (after zfls's and rstd's). Every pull request into
 # main and every push to main runs the unit tests and a headless game on each
-# platform, and checks zig fmt and the Markdown. Pushes to dev and pull
+# platform a release ships for (Windows on x86_64 and arm64; others join with
+# front ends of their own, #27), and checks zig fmt and the Markdown. Pushes to dev and pull
 # requests into it are not run: dev is checked as a whole by the pull request
 # that releases it (to main), which each merge into dev restarts; start the
 # workflow by hand on a branch to check it alone (`gh workflow run CI --ref
@@ -82,9 +83,9 @@ jobs:
             done <<< "$(git diff --name-only "$BASE_SHA...HEAD")"
           fi
           if [ "$scope" = full ]; then
-            platforms='["ubuntu-24.04","ubuntu-24.04-arm","windows-2025","macos-15","macos-15-intel"]'
+            platforms='["windows-2025","windows-11-arm"]'
           else
-            platforms='["ubuntu-24.04"]'
+            platforms='["windows-2025"]'
           fi
           {
             echo "ci=$ci"
@@ -162,9 +163,9 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
-      # the platform's own front end (Win32 on Windows, headless elsewhere)
+      # the Win32 game, as released, for this runner's architecture
       - name: Build
-        run: zig build
+        run: zig build -Dcpu=baseline
 
       - name: Unit tests
         run: zig build test
