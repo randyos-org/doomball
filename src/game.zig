@@ -2,9 +2,14 @@
 const std = @import("std");
 const platform = @import("platform.zig");
 const render = @import("render.zig");
+const layout = @import("layout.zig");
 
-pub const W: f32 = platform.width;
-pub const H: f32 = platform.height;
+// the top-down table, drawn into its own buffer and scaled into the view
+const table_w = 240;
+const table_h = 360;
+pub const W: f32 = table_w;
+pub const H: f32 = table_h;
+var table_px: [table_w * table_h]u32 = undefined;
 
 const gravity: f32 = 420;
 const ball_r: f32 = 4;
@@ -222,12 +227,32 @@ pub const Game = struct {
     const c_gold: u32 = 0xe8c030;
 
     pub fn render(self: *const Game, pixels: []u32) void {
-        const cv = render_mod.Canvas{ .pixels = pixels, .w = platform.width, .h = platform.height };
+        self.renderTable(&table_px);
+        // 4/3: the table's height fills the view's
+        const sw = @divTrunc(table_w * layout.view.h, table_h);
+        const ox = layout.view.x + @divTrunc(layout.view.w - sw, 2);
+        for (0..platform.height) |y| {
+            const row = pixels[y * platform.width ..][0..platform.width];
+            for (row, 0..) |*px, x| {
+                const xi: i32 = @intCast(x);
+                const yi: i32 = @intCast(y);
+                px.* = if (layout.panel.contains(xi, yi))
+                    0x202020
+                else if (xi >= ox and xi < ox + sw)
+                    table_px[@as(usize, @intCast(@divTrunc(yi * table_h, layout.view.h))) * table_w + @as(usize, @intCast(@divTrunc((xi - ox) * table_w, sw)))]
+                else
+                    c_bg;
+            }
+        }
+    }
+
+    fn renderTable(self: *const Game, pixels: []u32) void {
+        const cv = render_mod.Canvas{ .pixels = pixels, .w = table_w, .h = table_h };
 
         var y: i32 = 0;
-        while (y < platform.height) : (y += 1) {
+        while (y < table_h) : (y += 1) {
             var x: i32 = 0;
-            while (x < platform.width) : (x += 1) {
+            while (x < table_w) : (x += 1) {
                 const row = @divFloor(y, 12);
                 const off: i32 = if (@mod(row, 2) == 0) 0 else 12;
                 const mortar = @mod(y, 12) == 0 or @mod(x + off, 24) == 0;
@@ -236,8 +261,8 @@ pub const Game = struct {
         }
 
         // playfield interior
-        for (0..platform.height) |yy| {
-            for (0..platform.width) |xx| {
+        for (0..table_h) |yy| {
+            for (0..table_w) |xx| {
                 const fx: f32 = @floatFromInt(xx);
                 const fy: f32 = @floatFromInt(yy);
                 const dx = fx - 120;
@@ -340,9 +365,11 @@ test "flipper hits ball upward" {
     try std.testing.expect(min_vy < -100);
 }
 
-test "render fills framebuffer" {
+var test_fb: [platform.width * platform.height]u32 = undefined;
+
+test "render fills the view and the panel" {
     var g = Game{};
-    var fb: [platform.width * platform.height]u32 = undefined;
-    g.render(&fb);
-    try std.testing.expect(fb[0] != 0);
+    g.render(&test_fb);
+    try std.testing.expect(test_fb[0] != 0);
+    try std.testing.expectEqual(@as(u32, 0x202020), test_fb[platform.width - 1]);
 }

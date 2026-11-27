@@ -10,6 +10,9 @@ const backend = switch (build_options.backend) {
 
 const frame_ms: u64 = 1000 / 60;
 
+// 1.2 MB: too big for the main thread's stack
+var fb: [platform.width * platform.height]u32 = undefined;
+
 pub fn main(init: std.process.Init) !void {
     const p = backend.impl;
     if (build_options.backend == .headless) {
@@ -22,7 +25,6 @@ pub fn main(init: std.process.Init) !void {
     defer p.shutdown();
 
     var g = game.Game{};
-    var fb: [platform.width * platform.height]u32 = undefined;
     var next = p.ticksMs();
     while (true) {
         const in = p.pollInput();

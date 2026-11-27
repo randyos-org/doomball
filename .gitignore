@@ -9,3 +9,5 @@ zig-pkg/
 # the headless backend's last frame
 *.ppm
 *.log
+
+/doom1.wad*

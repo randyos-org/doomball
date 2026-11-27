@@ -10,8 +10,6 @@ const WPARAM = usize;
 const LPARAM = isize;
 const LRESULT = isize;
 
-const scale = 3;
-
 const WNDPROC = *const fn (HWND, u32, WPARAM, LPARAM) callconv(WINAPI) LRESULT;
 const POINT = extern struct { x: i32, y: i32 };
 const RECT = extern struct { left: i32, top: i32, right: i32, bottom: i32 };
@@ -72,6 +70,7 @@ const WM_SYSKEYDOWN = 0x0104;
 const WM_SYSKEYUP = 0x0105;
 const PM_REMOVE = 1;
 const WS_STYLE: u32 = 0x00C00000 | 0x00080000 | 0x00020000 | 0x10000000; // caption|sysmenu|minimize|visible
+const VK_SHIFT = 0x10;
 const VK_RETURN = 0x0D;
 const VK_ESCAPE = 0x1B;
 const VK_SPACE = 0x20;
@@ -98,11 +97,11 @@ pub const impl = platform.Platform{
 fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
     switch (msg) {
         WM_KEYDOWN, WM_SYSKEYDOWN => {
-            if (wp < keys.len) keys[wp] = true;
+            setKey(wp, lp, true);
             return 0;
         },
         WM_KEYUP, WM_SYSKEYUP => {
-            if (wp < keys.len) keys[wp] = false;
+            setKey(wp, lp, false);
             return 0;
         },
         WM_CLOSE => {
@@ -118,6 +117,16 @@ fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
     }
 }
 
+/// Both Shift keys arrive as VK_SHIFT; the scan code tells them apart.
+fn setKey(wp: WPARAM, lp: LPARAM, down: bool) void {
+    const scan_rshift = 0x36;
+    const vk: WPARAM = if (wp == VK_SHIFT)
+        (if ((lp >> 16) & 0xFF == scan_rshift) VK_RSHIFT else VK_LSHIFT)
+    else
+        wp;
+    if (vk < keys.len) keys[vk] = down;
+}
+
 fn init() anyerror!void {
     const inst = GetModuleHandleW(null);
     const class_name = std.unicode.utf8ToUtf16LeStringLiteral("DoomballWindow");
@@ -129,7 +138,7 @@ fn init() anyerror!void {
     };
     if (RegisterClassExW(&wc) == 0) return error.RegisterClassFailed;
 
-    var r = RECT{ .left = 0, .top = 0, .right = platform.width * scale, .bottom = platform.height * scale };
+    var r = RECT{ .left = 0, .top = 0, .right = platform.width, .bottom = platform.height };
     _ = AdjustWindowRect(&r, WS_STYLE, 0);
     hwnd = CreateWindowExW(0, class_name, std.unicode.utf8ToUtf16LeStringLiteral("Doomball"), WS_STYLE, 100, 50, r.right - r.left, r.bottom - r.top, null, null, inst, null);
     if (hwnd == null) return error.CreateWindowFailed;
@@ -169,5 +178,5 @@ fn present(pixels: []const u32) void {
     const dc = GetDC(h) orelse return;
     defer _ = ReleaseDC(h, dc);
     const bmi = BITMAPINFOHEADER{ .biWidth = platform.width, .biHeight = -platform.height };
-    _ = StretchDIBits(dc, 0, 0, platform.width * scale, platform.height * scale, 0, 0, platform.width, platform.height, pixels.ptr, &bmi, 0, 0x00CC0020);
+    _ = StretchDIBits(dc, 0, 0, platform.width, platform.height, 0, 0, platform.width, platform.height, pixels.ptr, &bmi, 0, 0x00CC0020);
 }
