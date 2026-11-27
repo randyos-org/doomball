@@ -1,4 +1,6 @@
 test {
+    _ = @import("font.zig");
+    _ = @import("panel.zig");
     _ = @import("frame.zig");
     _ = @import("prerender.zig");
     _ = @import("scene.zig");
@@ -11,5 +13,4 @@ test {
     _ = @import("table.zig");
     _ = @import("vec.zig");
     _ = @import("textures.zig");
-    _ = @import("render.zig");
 }

@@ -9,6 +9,23 @@ pub const start_balls = 3;
 
 pub const Phase = enum { playing, game_over };
 
+pub const ranks = [_][]const u8{ "PRIVATE", "CORPORAL", "SERGEANT", "LIEUTENANT", "CAPTAIN", "MAJOR", "COLONEL", "GENERAL" };
+
+/// A line of the panel's message log.
+pub const Message = struct {
+    text: [max_message]u8 = undefined,
+    len: u8 = 0,
+    /// seconds since it was said
+    age: f32 = 0,
+
+    pub fn str(m: *const Message) []const u8 {
+        return m.text[0..m.len];
+    }
+};
+/// what fits a line of the panel's log
+pub const max_message = 15;
+pub const log_lines = 6;
+
 /// Points for each event.
 pub const points = struct {
     pub const bumper = 100;
@@ -33,15 +50,32 @@ pub const Game = struct {
     sling_flash: [2]f32 = @splat(0),
     target_flash: [table.targets.len]f32 = @splat(0),
     lanes_lit: [table.rollovers.len]bool = @splat(false),
+    /// index into `ranks`
+    rank: u8 = 0,
+    keys: [3]bool = @splat(false),
+    slain: u32 = 0,
+    /// newest first
+    log: [log_lines]Message = @splat(.{}),
 
     pub fn init() Game {
         var g = Game{};
         g.serve();
+        g.say("SPACE: LAUNCH");
         return g;
+    }
+
+    /// Adds a line to the message log, cut to `max_message` characters.
+    pub fn say(self: *Game, text: []const u8) void {
+        var i: usize = log_lines - 1;
+        while (i > 0) : (i -= 1) self.log[i] = self.log[i - 1];
+        const n = @min(text.len, max_message);
+        self.log[0] = .{ .len = @intCast(n) };
+        @memcpy(self.log[0].text[0..n], text[0..n]);
     }
 
     pub fn update(self: *Game, in: platform.Input, dt: f32) void {
         self.time += dt;
+        for (&self.log) |*m| m.age += dt;
         const start_edge = in.start and !self.prev_start;
         self.prev_start = in.start;
         if (self.phase == .game_over) {
@@ -64,7 +98,14 @@ pub const Game = struct {
 
         if (self.world.activeBalls() == 0) {
             self.balls_left -|= 1;
-            if (self.balls_left == 0) self.phase = .game_over else self.serve();
+            if (self.balls_left == 0) {
+                self.phase = .game_over;
+                self.say("GAME OVER");
+                self.say("ENTER: NEW GAME");
+            } else {
+                self.say("BALL LOST");
+                self.serve();
+            }
         }
     }
 
@@ -84,6 +125,7 @@ pub const Game = struct {
                 if (std.mem.allEqual(bool, &self.lanes_lit, true)) {
                     self.score += points.lanes_done;
                     self.lanes_lit = @splat(false);
+                    self.say("LANES COMPLETE");
                 }
             },
             .target => {
@@ -126,6 +168,14 @@ test "draining every ball ends the game, and start begins a new one" {
     g.update(.{ .start = true }, frame_dt);
     try std.testing.expectEqual(Phase.playing, g.phase);
     try std.testing.expectEqual(@as(u8, start_balls), g.balls_left);
+}
+
+test "the message log keeps the newest lines first, cut to fit" {
+    var g = Game.init();
+    g.say("ONE");
+    g.say("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    try std.testing.expectEqualStrings("ABCDEFGHIJKLMNO", g.log[0].str());
+    try std.testing.expectEqualStrings("ONE", g.log[1].str());
 }
 
 test "completing the top lanes scores the bonus and clears them" {

@@ -20,7 +20,7 @@ Work goes on a branch from `dev` and reaches `dev` through a pull request; `main
 
 ## Portability
 
-Like doomgeneric, the game core (the rules in `src/game.zig`, the physics in `src/physics.zig`, the renderer in `src/frame.zig` and `src/prerender.zig`) is fully platform independent: it renders into a 640x480 `0x00RRGGBB` framebuffer (the table view and a status panel) and reads a small `Input` struct. A port only implements the `Platform` struct in `src/platform.zig` (init, shutdown, ticks, sleep, poll input, present):
+Like doomgeneric, the game core (the rules in `src/game.zig`, the physics in `src/physics.zig`, the renderer in `src/frame.zig` and `src/prerender.zig`, the panel in `src/panel.zig`) is fully platform independent: it renders into a 640x480 `0x00RRGGBB` framebuffer (the table view and a status panel) and reads a small `Input` struct. A port only implements the `Platform` struct in `src/platform.zig` (init, shutdown, ticks, sleep, poll input, present):
 
 - `src/platform_win32.zig`: Windows (Win32 + GDI, no dependencies)
 - `src/platform_headless.zig`: scripted input, writes `doomball.ppm` (default on non-Windows; `zig build run -Dframes=<n>`, or `-Dbackend=headless` on Windows)
