@@ -2,6 +2,8 @@ name: Windows release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -38,5 +40,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v-main-{0}', github.sha) }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: doomball-windows-x86_64.exe
+          fail_on_unmatched_files: true
