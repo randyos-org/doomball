@@ -8,6 +8,7 @@ test {
     _ = @import("raycast.zig");
     _ = @import("game.zig");
     _ = @import("layout.zig");
+    _ = @import("missions.zig");
     _ = @import("palette.zig");
     _ = @import("physics.zig");
     _ = @import("table.zig");

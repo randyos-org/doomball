@@ -27,7 +27,7 @@ pub fn states(g: *const Game) scene.States {
     var s: scene.States = @splat(0);
     for (g.bumper_flash, 0..) |f, i| s[scene.obj.bumper + i] = @intFromBool(f > 0);
     for (g.lanes_lit, 0..) |l, i| s[scene.obj.lane + i] = @intFromBool(l);
-    for (g.target_flash, 0..) |f, i| s[scene.obj.target + i] = @intFromBool(f > 0);
+    for (0..table.targets.len) |i| s[scene.obj.target + i] = @intFromBool(g.targetLit(i));
     s[scene.obj.gate] = @intFromBool(!g.world.gate_closed);
     s[scene.obj.lock] = @intFromBool(!g.world.gate_closed);
     for (g.sling_flash, 0..) |f, i| s[scene.obj.sling + i] = @intFromBool(f > 0);

@@ -4,12 +4,11 @@ const std = @import("std");
 const platform = @import("platform.zig");
 const physics = @import("physics.zig");
 const table = @import("table.zig");
+const missions = @import("missions.zig");
 
 pub const start_balls = 3;
 
 pub const Phase = enum { playing, game_over };
-
-pub const ranks = [_][]const u8{ "PRIVATE", "CORPORAL", "SERGEANT", "LIEUTENANT", "CAPTAIN", "MAJOR", "COLONEL", "GENERAL" };
 
 /// A line of the panel's message log.
 pub const Message = struct {
@@ -24,6 +23,8 @@ pub const Message = struct {
 };
 /// what fits a line of the panel's log
 pub const max_message = 15;
+
+const key_names = [3][]const u8{ "RED KEY", "BLUE KEY", "YELLOW KEY" };
 pub const log_lines = 6;
 
 /// Points for each event.
@@ -50,8 +51,7 @@ pub const Game = struct {
     sling_flash: [2]f32 = @splat(0),
     target_flash: [table.targets.len]f32 = @splat(0),
     lanes_lit: [table.rollovers.len]bool = @splat(false),
-    /// index into `ranks`
-    rank: u8 = 0,
+    missions: missions.Missions = .{},
     keys: [3]bool = @splat(false),
     slain: u32 = 0,
     /// newest first
@@ -85,6 +85,7 @@ pub const Game = struct {
         for (&self.bumper_flash) |*f| f.* = @max(0, f.* - dt);
         for (&self.sling_flash) |*f| f.* = @max(0, f.* - dt);
         for (&self.target_flash) |*f| f.* = @max(0, f.* - dt);
+        self.missionOutcome(self.missions.tick(dt));
 
         if (in.plunger) {
             self.plunger = @min(1, self.plunger + dt * 1.2);
@@ -104,6 +105,7 @@ pub const Game = struct {
                 self.say("ENTER: NEW GAME");
             } else {
                 self.say("BALL LOST");
+                self.missionOutcome(self.missions.drained());
                 self.serve();
             }
         }
@@ -114,6 +116,7 @@ pub const Game = struct {
             .bumper => {
                 self.score += points.bumper;
                 self.bumper_flash[e.id] = 0.15;
+                self.missionOutcome(self.missions.count(.barrage, 1));
             },
             .sling => {
                 self.score += points.sling;
@@ -126,14 +129,52 @@ pub const Game = struct {
                     self.score += points.lanes_done;
                     self.lanes_lit = @splat(false);
                     self.say("LANES COMPLETE");
+                    self.missionOutcome(self.missions.count(.lanes, 1));
                 }
             },
             .target => {
-                self.score += if (table.targets[e.id].kind == .mission) points.mission_target else points.target;
                 self.target_flash[e.id] = 0.3;
+                switch (table.targets[e.id].kind) {
+                    .mission => {
+                        self.score += points.mission_target;
+                        if (self.missions.start()) |s| self.say(s.name);
+                    },
+                    .key_red, .key_blue, .key_yellow => |k| {
+                        self.score += points.target;
+                        const i = @backingInt(k);
+                        if (!self.keys[i]) {
+                            self.keys[i] = true;
+                            self.say(key_names[i]);
+                            self.missionOutcome(self.missions.count(.keys, 1));
+                        }
+                    },
+                }
             },
             .wall, .rubber, .gate, .flipper, .flipper_up, .demon, .lock, .drain => {},
         }
+    }
+
+    fn missionOutcome(self: *Game, o: missions.Outcome) void {
+        switch (o) {
+            .none => {},
+            .done => {
+                self.score += missions.bonus(self.missions.rank);
+                self.say("MISSION DONE");
+                self.say("PROMOTED TO");
+                self.say(missions.ranks[self.missions.rank]);
+            },
+            .failed => self.say("MISSION FAILED"),
+        }
+    }
+
+    /// Whether target `i` shows lit: just hit, a key held, or the mission
+    /// target blinking for a mission to start.
+    pub fn targetLit(self: *const Game, i: usize) bool {
+        if (self.target_flash[i] > 0) return true;
+        return switch (table.targets[i].kind) {
+            .mission => self.missions.active == null and @mod(self.time, 0.8) < 0.4,
+            .key_red, .key_blue, .key_yellow => |k| self.keys[@backingInt(k)],
+        };
     }
 
     fn serve(self: *Game) void {
@@ -176,6 +217,29 @@ test "the message log keeps the newest lines first, cut to fit" {
     g.say("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     try std.testing.expectEqualStrings("ABCDEFGHIJKLMNO", g.log[0].str());
     try std.testing.expectEqualStrings("ONE", g.log[1].str());
+}
+
+test "the mission target starts a mission, and finishing it promotes" {
+    var g = Game.init();
+    const mission = for (table.targets, 0..) |t, i| {
+        if (t.kind == .mission) break i;
+    } else unreachable;
+    g.handle(.{ .kind = .target, .id = @intCast(mission) });
+    try std.testing.expect(g.missions.active != null);
+    try std.testing.expectEqualStrings("BUMPER BARRAGE", g.log[0].str());
+    for (0..missions.specs[0].goal) |_| g.handle(.{ .kind = .bumper });
+    try std.testing.expectEqual(@as(u8, 1), g.missions.rank);
+    try std.testing.expectEqualStrings("CORPORAL", g.log[0].str());
+}
+
+test "a key is held once hit and counts toward finding the keys" {
+    var g = Game.init();
+    g.missions.next = 3;
+    _ = g.missions.start();
+    g.handle(.{ .kind = .target, .id = 0 });
+    g.handle(.{ .kind = .target, .id = 0 });
+    try std.testing.expect(g.keys[0] and g.targetLit(0));
+    try std.testing.expectEqual(@as(u16, 1), g.missions.active.?.progress);
 }
 
 test "completing the top lanes scores the bonus and clears them" {

@@ -8,6 +8,7 @@ const pal = @import("palette.zig");
 const tex = @import("textures.zig");
 const font = @import("font.zig");
 const game = @import("game.zig");
+const missions = @import("missions.zig");
 
 const Game = game.Game;
 const stride = platform.width;
@@ -112,8 +113,9 @@ pub fn draw(g: *const Game, pixels: []u32) void {
 
     well(pixels, px0 + 10, 124, pw - 20, 40);
     text(pixels, px0 + 16, 129, "RANK", 1, label);
-    text(pixels, px0 + 16, 141, game.ranks[g.rank], 2, value);
-    for (0..g.rank) |k| {
+    const rank = g.missions.rank;
+    text(pixels, px0 + 16, 141, missions.ranks[rank], 2, value);
+    for (0..rank) |k| {
         // a chevron per rank above private
         const cx = px0 + pw - 22;
         const cy = 158 - k * 4;
@@ -122,8 +124,20 @@ pub fn draw(g: *const Game, pixels: []u32) void {
 
     well(pixels, px0 + 10, 170, pw - 20, 64);
     text(pixels, px0 + 16, 175, "MISSION", 1, label);
-    text(pixels, px0 + 16, 189, "HIT THE", 2, c(.toxic, 12));
-    text(pixels, px0 + 16, 207, "GREEN TARGET", 2, c(.toxic, 12));
+    if (g.missions.active) |a| {
+        const spec = missions.specs[a.spec];
+        text(pixels, px0 + 16, 189, spec.name, 2, c(.toxic, 13));
+        text(pixels, px0 + 16, 208, std.mem.print(&buf, "{d}/{d} {s}", .{ a.progress, a.goal, spec.unit }) catch "", 1, value);
+        // time left, or for holding the line, time survived
+        const frac = if (spec.kind == .hold) @as(f32, @floatFromInt(a.progress)) / @as(f32, @floatFromInt(a.goal)) else a.clock / spec.seconds;
+        const bar_w = pw - 32;
+        fill(pixels, px0 + 16, 221, bar_w, 6, c(.crimson, 2));
+        fill(pixels, px0 + 16, 221, @intFromFloat(@as(f32, @floatFromInt(bar_w)) * std.math.clamp(frac, 0, 1)), 6, if (frac < 0.25 and spec.kind != .hold) c(.blood, 14) else c(.toxic, 11));
+    } else {
+        const blink: u4 = if (@mod(g.time, 0.8) < 0.4) 13 else 8;
+        text(pixels, px0 + 16, 189, "HIT THE", 2, c(.toxic, blink));
+        text(pixels, px0 + 16, 207, "GREEN TARGET", 2, c(.toxic, blink));
+    }
 
     // keys held, and demons slain
     well(pixels, px0 + 10, 240, pw - 20, 34);
