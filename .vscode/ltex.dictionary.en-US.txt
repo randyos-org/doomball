@@ -28,6 +28,7 @@ pnpm
 randyos
 randyos-org
 readme
+RGBA
 RRGGBB
 RSHIFT
 rstd

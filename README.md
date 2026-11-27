@@ -5,6 +5,7 @@ Doom-themed pinball, written in Zig (requires Zig 0.17.1): a table in prerendere
 ## Build & run
 
 ```sh
+git clone --recursive https://github.com/randyos-org/doomball  # rstd is a submodule
 zig build run                      # native; Windows opens a Win32 window
 zig build -Dtarget=x86_64-windows  # cross-compile a Windows exe
 zig build test                     # unit tests

@@ -10,7 +10,7 @@ Doom-themed pinball in Zig; [docs/design.md](docs/design.md) is where it is goin
 
 ## Rules
 
-- No dependencies: `build.zig.zon` lists none, and the game links only the system libraries of its backend.
+- One dependency: rstd (randyos-org/rstd), a git submodule at `vendor/rstd` as zfls has it, for rgl's graphics as they grow there (rstd#817); nothing else, and the game links only the system libraries of its backend. Clone with `--recursive` (rstd has a submodule of its own). `vendor/rstd` is another project's: a change it needs is made in rstd, through its own pull requests, and the submodule then moves to that commit.
 - Zig over other languages, built with the pinned official release (0.17.1). Scripts in the repository are bash. Scratch scripts an agent writes to analyze something may be in any language and stay in its scratchpad, never committed.
 - Never run a command that downloads or installs software without asking first, package managers included (markdownlint and cspell through `npx` excepted).
 - The repository owner is `emanspeaks` in every file, issue and pull request; write `@emanspeaks` only to ask for his input, since every `@` notifies him.
@@ -23,7 +23,7 @@ Doom-themed pinball in Zig; [docs/design.md](docs/design.md) is where it is goin
 - On GitHub, agents act as the GitHub App `randyos-agent`, never as emanspeaks: `GH_TOKEN="$(bash /c/scratch/github-apps/app-token.sh randyos-org)"` for `gh`, and `bash /c/scratch/github-apps/app-git.sh randyos-org <git arguments>` for commits, fetches and pushes, with the harness's AI attribution trailer. Never print, copy or commit anything in `/c/scratch/github-apps/randyos-org/`. The app administers the repository too (settings, rulesets, labels); what stays with emanspeaks is merging `dev` into `main`, and repository variables and secrets.
 - Commit messages are one short line (about 50 characters), with no body; rationale and test results go in the pull request or the issue.
 - Pull requests take the release-note labels of `.github/release.yml` (`fix`, `feature`, `performance`, `tests`, `refactor`, `ci`, `skip-changelog`); their titles are the release notes.
-- Before a commit, check `git diff --cached` and `git status` so that a commit takes only your own changes. emanspeaks's uncommitted edits to `CLAUDE.md`, the LTeX files and the readme go into the next commit. After a merge, delete the branch, locally and on GitHub (GitHub deletes merged branches itself).
+- Before a commit, check `git diff --cached` and `git status` so that a commit takes only your own changes. emanspeaks's uncommitted dictionary, LTeX false-positive and Markdown edits go into the next commit, whatever it is (the global rule). After a merge, delete the branch, locally and on GitHub (GitHub deletes merged branches itself).
 - `.local-gitignore` is this checkout's own ignore file (`git config core.excludesFile .local-gitignore`).
 
 ## Zig 0.17: what not to use

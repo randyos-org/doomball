@@ -1,0 +1,3 @@
+[submodule "vendor/rstd"]
+	path = vendor/rstd
+	url = https://github.com/randyos-org/rstd.git
