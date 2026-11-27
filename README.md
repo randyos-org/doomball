@@ -11,6 +11,10 @@ zig build -Dtarget=x86_64-windows  # cross-compile a Windows exe
 zig build test                     # unit tests
 ```
 
+Pushing a version tag such as `v1.0.0` runs the Windows release workflow. It
+tests the game, builds an optimized Windows executable with Zig 0.17.1, and
+attaches `doomball-windows-x86_64.exe` to the GitHub Release for that tag.
+
 Controls: `Space` hold/release = plunger, `Left`/`Z`/`Shift` and
 `Right`/`/`/`Shift` = flippers, `Enter`/`Space` = restart after game over, `Esc` = quit.
 

@@ -1,0 +1,42 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Zig 0.17.1
+        run: python -m pip install ziglang==0.17.1
+
+      - name: Verify Zig version
+        run: python -m ziglang version
+
+      - name: Run tests
+        run: python -m ziglang build test
+
+      - name: Build optimized Windows executable
+        run: python -m ziglang build -Doptimize=ReleaseFast
+
+      - name: Stage release asset
+        run: Copy-Item zig-out/bin/doomball.exe doomball-windows-x86_64.exe
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: doomball-windows-x86_64.exe
