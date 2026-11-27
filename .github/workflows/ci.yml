@@ -1,0 +1,347 @@
+name: CI
+
+# Modeled on skein's ci.yml (after zfls's and rstd's). Every pull request into
+# main and every push to main runs the unit tests and a headless game on each
+# platform, and checks zig fmt and the Markdown. Pushes to dev and pull
+# requests into it are not run: dev is checked as a whole by the pull request
+# that releases it (to main), which each merge into dev restarts; start the
+# workflow by hand on a branch to check it alone (`gh workflow run CI --ref
+# <branch>`). A pull request that only changes documentation (docs-only.txt)
+# is linted and tested on one platform, and not compiled. A pull request that
+# only changes the files listed in no-ci.txt (the license, editor settings)
+# skips the checks; the "CI" job, the check main's ruleset requires, passes
+# then too.
+#
+# A push to main of a version (build.zig.zon) that has no tag yet is released,
+# when something a release ships has changed since the last one (changes.sh):
+# the commit is tagged, a GitHub release gets the Windows game (one exe per
+# target), and the next version is begun on dev.
+#
+# The game is not signed. Should it be, skein's ci.yml has the jobs to copy
+# (a `sign` input, sign-windows between compile and release).
+
+on:
+  push:
+    # (not dev: see the top)
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ZIG_VERSION: 0.17.1
+
+jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-24.04
+    outputs:
+      ci: ${{ steps.changes.outputs.ci }}
+      scope: ${{ steps.changes.outputs.scope }}
+      platforms: ${{ steps.changes.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Work out what changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # matches, no_ci, docs_only
+          source .github/workflows/changes.sh
+
+          # A pull request that only changes files of no-ci.txt skips CI.
+          # One that only changes documentation (docs-only.txt) is linted
+          # and tested on one platform, and is not compiled. Pushes to main
+          # and runs started by hand always run everything.
+          ci=true
+          scope=full
+          if [ "$EVENT" = pull_request ]; then
+            ci=false
+            scope=docs
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              if matches "$f" "${no_ci[@]}"; then continue; fi
+              ci=true
+              matches "$f" "${docs_only[@]}" || scope=full
+              if [ "$scope" = full ]; then echo "changed: $f"; break; fi
+            done <<< "$(git diff --name-only "$BASE_SHA...HEAD")"
+          fi
+          if [ "$scope" = full ]; then
+            platforms='["ubuntu-24.04","ubuntu-24.04-arm","windows-2025","macos-15","macos-15-intel"]'
+          else
+            platforms='["ubuntu-24.04"]'
+          fi
+          {
+            echo "ci=$ci"
+            echo "scope=$scope"
+            echo "platforms=$platforms"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$ci" = false ]; then
+            echo "Only files of no-ci.txt changed; skipping the checks." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [ "$scope" = docs ]; then
+            echo "Only documentation changed: lint, and the tests on one platform." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The version, from build.zig.zon, and whether this run releases it: a push
+  # to main of a version that has no tag yet.
+  version:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # every place that states the version agrees (version.sh lists them)
+          if ! version=$(bash .github/workflows/version.sh); then
+            echo "::error::the places that state the version disagree; see the log, and set them all with version.sh set"
+            exit 1
+          fi
+          release=false
+          if [ "$EVENT" = push ] && [ "$GITHUB_REF" = refs/heads/main ] \
+            && ! git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            # matches, exempt, shipped_changes
+            source .github/workflows/changes.sh
+            last=$(git describe --tags --abbrev=0 --match 'v*' 2> /dev/null || true)
+            if [ -z "$last" ]; then
+              release=true
+            else
+              shipped=$(shipped_changes "$last")
+              if [ -n "$shipped" ]; then
+                release=true
+                { echo "Changed since $last:"; echo "$shipped" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "Nothing that a release ships has changed since $last: no release." | tee -a "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
+          fi
+          {
+            echo "version=$version"
+            echo "release=$release"
+            echo "sha=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+          echo "v$version, release: $release" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Test ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.ci == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.changes.outputs.platforms) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: randyos-org/setup-zig@node24  # v2.2.1 on Node.js 24, until upstream releases it
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      # the platform's own front end (Win32 on Windows, headless elsewhere)
+      - name: Build
+        run: zig build
+
+      - name: Unit tests
+        run: zig build test
+
+      # the game, played by its scripted input for a few seconds of frames
+      - name: The game runs (headless)
+        run: |
+          zig build run -Dbackend=headless -Dframes=300
+          test -s doomball.ppm
+
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.ci == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: randyos-org/setup-zig@node24  # v2.2.1 on Node.js 24, until upstream releases it
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: zig fmt
+        run: zig fmt --check build.zig src
+
+      - name: Markdown
+        run: npx --yes markdownlint-cli2@0.24.2 "**/*.md"
+
+  # The Windows game for each target, built on one runner (Zig compiles for
+  # both) for the target's baseline CPU: built without -Dtarget, as the old
+  # release workflow did, it took the runner's CPU features and stopped with
+  # an illegal instruction on older machines. Each exe is a release asset of
+  # its own: dist/doomball-vVERSION-TARGET.exe.
+  compile:
+    name: Compile
+    needs: [changes, version]
+    if: needs.changes.outputs.ci == 'true' && needs.changes.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: randyos-org/setup-zig@node24  # v2.2.1 on Node.js 24, until upstream releases it
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: doomball for each Windows target
+        run: |
+          mkdir dist
+          for target in x86_64-windows aarch64-windows; do
+            zig build -Dtarget="$target" -Dcpu=baseline -Doptimize=fast --prefix "out/$target"
+            cp "out/$target/bin/doomball.exe" "dist/doomball-v$VERSION-$target.exe"
+          done
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  ci:
+    name: CI
+    # the one check main's ruleset requires: passes when every job passed or
+    # was skipped for a change that needs none
+    if: always()
+    needs: [changes, version, test, lint, compile]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check the jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            case "$r" in success | skipped) ;; *) echo "::error::a job ended as $r"; exit 1 ;; esac
+          done
+
+  release:
+    name: Release v${{ needs.version.outputs.version }}
+    needs: [version, test, lint, compile]
+    if: >-
+      ${{ !cancelled() && needs.version.outputs.release == 'true'
+      && needs.test.result == 'success' && needs.lint.result == 'success'
+      && needs.compile.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      SHA: ${{ needs.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Check the programs
+        run: |
+          ls -l dist
+          for target in x86_64-windows aarch64-windows; do
+            if [ ! -f "dist/doomball-v$VERSION-$target.exe" ]; then
+              echo "::error::no doomball-v$VERSION-$target.exe"
+              exit 1
+            fi
+          done
+
+      - name: Tag the tested commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "doomball v$VERSION" "$SHA"
+          git push origin "v$VERSION"
+          (cd dist && sha256sum -- * > SHA256SUMS)
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: doomball v${{ needs.version.outputs.version }}
+          files: dist/*
+          generate_release_notes: true
+          # 0.x: everything may still change
+          prerelease: ${{ startsWith(needs.version.outputs.version, '0.') }}
+
+  # The next version is begun on dev: main keeps the version it released. A
+  # separate job, so that a push dev refuses does not stop the publishing.
+  begin-next-version:
+    name: Merge v${{ needs.version.outputs.version }} into dev and begin the next version
+    needs: [version, release]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      SHA: ${{ needs.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+
+      # A fast-forward when dev has not moved, else a merge commit
+      - name: Merge into dev and begin the next version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tagged() { git rev-parse -q --verify "refs/tags/v$1" >/dev/null; }
+          for attempt in 1 2 3; do
+            git fetch -q --tags origin dev
+            git checkout -q -B dev origin/dev
+            if ! git merge -q -m "Merge v$VERSION into dev [skip ci]" "$SHA"; then
+              git merge --abort
+              echo "::error::v$VERSION conflicts with dev; merge main into dev by hand and set the next version"
+              exit 1
+            fi
+            version=$(bash .github/workflows/version.sh)
+            if tagged "$version"; then
+              next=$version
+              while tagged "$next"; do
+                IFS=. read -r ma mi pa <<< "$next"
+                next="$ma.$mi.$((pa + 1))"
+              done
+              bash .github/workflows/version.sh set "$next"
+              git commit -qam "Begin v$next development [skip ci]"
+            fi
+            if git push -q origin dev; then exit 0; fi
+            echo "dev moved while merging; trying again"
+          done
+          echo "::error::could not push to dev"
+          exit 1

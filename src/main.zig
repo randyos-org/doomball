@@ -14,9 +14,8 @@ pub fn main(init: std.process.Init) !void {
     const p = backend.impl;
     if (build_options.backend == .headless) {
         backend.io = init.io;
-        var args = init.minimal.args.iterate();
-        _ = args.skip();
-        if (args.next()) |a| backend.max_frames = std.fmt.parseInt(u64, a, 10) catch backend.max_frames;
+        const args = try init.minimal.args.toSlice(init.arena.allocator());
+        if (args.len > 1) backend.max_frames = std.fmt.parseInt(u64, args[1], 10) catch backend.max_frames;
     }
 
     try p.init();

@@ -1,0 +1,186 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  // From cesium-src's and skein's workspace files.
+  "settings": {
+    "files.associations": {
+      ".local-gitignore": "gitignore",
+      ".github/workflows/*.txt": "gitignore",
+      "**/.claude/projects/*/memory/*.md": "plaintext",
+    },
+    "files.exclude": {
+      "**/.zig-cache/**": true,
+      "**/zig-pkg/**": true,
+      "**/zig-cache*/**": true,
+    },
+    "files.watcherExclude": {
+      "**/.zig-cache/**": true,
+      "**/zig-pkg/**": true,
+      "**/zig-cache*/**": true,
+      "**/.git/**": true,
+      "zig-out/**": true,
+    },
+    "files.insertFinalNewline": true,
+    "editor.wrappingIndent": "indent",
+    "[markdown]": {
+      "editor.quickSuggestions": {
+        "other": true,
+        "comments": false,
+        "strings": false
+      }
+    },
+    "editor.semanticTokenColorCustomizations": {
+      "rules": {
+        "*.deprecated": {
+          // highlight semantic tokens that are marked as "deprecated"
+          "strikethrough": true
+        },
+      },
+    },
+    "terminal.integrated.automationProfile.windows": {
+      "path": "C:\\windows\\system32\\cmd.exe",
+    },
+    "ltex.additionalRules.motherTongue": "en-US",
+    "debug.onTaskErrors": "abort",  // will switch to problems pane otherwise
+
+    // Zig 0.17.1, the Zig extension's own copy (install it with the
+    // extension's "Zig: Install" command), for ZLS and the tasks alike
+    "zig.path": "${userHome}/AppData/Roaming/Code/User/globalStorage/ziglang.vscode-zig/zig/x86_64-windows-0.17.1/zig.exe",
+    "zig.zls.enabled": "on",
+    "zig.zls.inlayHintsShowParameterName": false,
+    "zig.zls.inlayHintsExcludeSingleArgument": false,
+    "zig.zls.inlayHintsShowBuiltin": false,
+    "zig.zls.inlayHintsShowStructLiteralFieldType": false,
+    "zig.zls.inlayHintsShowVariableTypeHints": false,
+    "zig.zls.warnStyle": true,
+    "zig.zls.enableArgumentPlaceholders": false,
+  },
+  "extensions": {
+    "recommendations": [
+      "ziglang.vscode-zig",
+      "ms-vscode.cpptools",  // windows debug
+      // "vadimcn.vscode-lldb",  // posix debug
+      "yzhang.markdown-all-in-one",
+      "davidanson.vscode-markdownlint",
+      "streetsidesoftware.code-spell-checker",
+      "streetsidesoftware.code-spell-checker-win32",
+      "ltex-plus.vscode-ltex-plus",
+      "timonwong.shellcheck",
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "zig build",
+        "type": "shell",
+        "command": "${config:zig.path}",
+        "args": [
+          "build",
+        ],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "clear": true,
+          "reveal": "always",
+          "panel": "shared",
+          "focus": true,
+          "revealProblems": "never",
+        },
+      },
+      {
+        "label": "zig build test",
+        "type": "shell",
+        "command": "${config:zig.path}",
+        "args": [
+          "build",
+          "test",
+          "--summary",
+          "all",
+        ],
+        "group": {
+          "kind": "test",
+          "isDefault": true
+        },
+        "problemMatcher": [],
+        "presentation": {
+          "clear": true,
+          "reveal": "always",
+          "panel": "shared",
+          "focus": true,
+          "revealProblems": "never",
+        },
+      },
+      {
+        "label": "zig build run",
+        "type": "shell",
+        "command": "${config:zig.path}",
+        "args": [
+          "build",
+          "run",
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "clear": true,
+          "reveal": "always",
+          "panel": "shared",
+          "revealProblems": "never",
+        },
+      },
+      // the headless backend, into a prefix of its own so it does not
+      // replace the Win32 doomball.exe; it writes doomball.ppm
+      {
+        "label": "zig build headless",
+        "type": "shell",
+        "command": "${config:zig.path}",
+        "args": [
+          "build",
+          "-Dbackend=headless",
+          "--prefix",
+          "zig-out/headless",
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "clear": true,
+          "reveal": "always",
+          "panel": "shared",
+          "revealProblems": "never",
+        },
+      },
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "doomball (cppvsdbg)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/zig-out/bin/doomball.exe",
+        "cwd": "${workspaceFolder}",
+        "preLaunchTask": "zig build",
+        "console": "integratedTerminal",
+      },
+      // scripted input for 600 frames, then doomball.ppm in the working folder
+      {
+        "name": "doomball headless (cppvsdbg)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/zig-out/headless/bin/doomball.exe",
+        "args": [
+          "600",
+        ],
+        "cwd": "${workspaceFolder}",
+        "preLaunchTask": "zig build headless",
+        "console": "integratedTerminal",
+      },
+    ],
+    "compounds": []
+  },
+}
