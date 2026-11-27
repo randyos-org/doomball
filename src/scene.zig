@@ -6,7 +6,7 @@ const vec = @import("vec.zig");
 const table = @import("table.zig");
 const pal = @import("palette.zig");
 const tex = @import("textures.zig");
-const render = @import("render.zig");
+const font = @import("font.zig");
 
 const V2 = vec.V2;
 const V3 = vec.V3;
@@ -186,20 +186,19 @@ fn ring(p: V2, c: V2, r0: f32, r1: f32) bool {
     return d >= r0 and d <= r1;
 }
 
-/// Painted letters on the playfield: 3x5 glyphs, `cell` units a pixel.
+/// Painted letters on the playfield, `cell` units a font pixel.
 fn lettering(p: V2, text: []const u8, x0: f32, y0: f32, cell: f32) bool {
-    if (p.y < y0 or p.y >= y0 + 5 * cell or p.x < x0) return false;
+    if (p.y < y0 or p.y >= y0 + font.glyph_h * cell or p.x < x0) return false;
     const col: usize = @intFromFloat((p.x - x0) / cell);
     const row: usize = @intFromFloat((p.y - y0) / cell);
-    const ch = col / 4;
-    if (ch >= text.len or col % 4 == 3) return false;
-    const g = render.glyph(text[ch]) orelse return false;
-    return g[row * 3 + col % 4] == '1';
+    const ch = col / font.advance;
+    if (ch >= text.len) return false;
+    return font.bit(text[ch], col % font.advance, row);
 }
 
 const title = "DOOMBALL";
-const title_cell: f32 = 6;
-const title_x = table.axis_x - (title.len * 4 - 1) * title_cell / 2;
+const title_cell: f32 = 5;
+const title_x = table.axis_x - (title.len * font.advance - 1) * title_cell / 2;
 
 /// The playfield's art at a point.
 pub fn floor(p: V2) Floor {
