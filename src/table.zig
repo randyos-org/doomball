@@ -77,8 +77,9 @@ pub const walls = blk: {
         .{ .a = v2(390, arch_cy), .b = v2(390, 830), .r = 6, .h = 40 },
         .{ .a = v2(352, 262), .b = v2(352, 830), .r = 4, .h = 32 },
         .{ .a = v2(352, 792), .b = v2(390, 792), .r = 4, .h = 32 },
-        // the lane's one-way gate: the ball goes up, never back down
-        .{ .a = v2(356, 236), .b = v2(384, 236), .r = 2, .h = 10, .kind = .oneway, .side = .grate },
+        // the lane's one-way gate: the ball goes up, never back down; it
+        // slopes, so a ball falling back onto it rolls off (#26)
+        .{ .a = v2(356, 246), .b = v2(384, 226), .r = 2, .h = 10, .kind = .oneway, .side = .grate },
         // top lane guides
         .{ .a = v2(124, 70), .b = v2(124, 110), .r = 4, .h = 18, .kind = .rubber },
         .{ .a = v2(164, 70), .b = v2(164, 110), .r = 4, .h = 18, .kind = .rubber },
@@ -96,9 +97,10 @@ pub const walls = blk: {
         .{ .a = sling_r[1], .b = sling_r[0], .r = 4, .h = 22, .kind = .rubber },
         .{ .a = sling_r[2], .b = sling_r[1], .r = 4, .h = 22, .kind = .rubber },
         .{ .a = sling_r[0], .b = sling_r[2], .r = 4, .h = 22, .kind = .sling, .side = .hellstone },
-        // the lock's alcove, against the lane wall
-        .{ .a = v2(292, 268), .b = v2(348, 268), .r = 4, .h = 28 },
-        .{ .a = v2(292, 268), .b = v2(292, 318), .r = 4, .h = 28 },
+        // the lock's alcove, against the lane wall; its roof slopes to the
+        // playfield, so no ball rests on it (#26)
+        .{ .a = v2(292, 280), .b = v2(348, 262), .r = 4, .h = 28 },
+        .{ .a = v2(292, 280), .b = v2(292, 318), .r = 4, .h = 28 },
     };
     for (outer) |o| {
         w[n] = o;

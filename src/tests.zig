@@ -1,4 +1,5 @@
 test {
+    _ = @import("_test/launch_sweep.zig");
     _ = @import("audio.zig");
     _ = @import("font.zig");
     _ = @import("panel.zig");
