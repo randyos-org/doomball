@@ -10,10 +10,11 @@ const backend = switch (build_options.backend) {
 
 const frame_ms: u64 = 1000 / 60;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     const p = backend.impl;
     if (build_options.backend == .headless) {
-        var args = std.process.args();
+        backend.io = init.io;
+        var args = init.minimal.args.iterate();
         _ = args.skip();
         if (args.next()) |a| backend.max_frames = std.fmt.parseInt(u64, a, 10) catch backend.max_frames;
     }

@@ -6,6 +6,7 @@ const platform = @import("platform.zig");
 var frame: u64 = 0;
 var last: [platform.width * platform.height]u32 = undefined;
 pub var max_frames: u64 = 600;
+pub var io: std.Io = undefined;
 
 pub const impl = platform.Platform{
     .init = init,
@@ -39,14 +40,17 @@ fn present(pixels: []const u32) void {
     @memcpy(&last, pixels);
 }
 
+var ppm: [header_max + platform.width * platform.height * 3]u8 = undefined;
+const header_max = 32;
+
 fn shutdown() void {
-    const file = std.fs.cwd().createFile("doomball.ppm", .{}) catch return;
-    defer file.close();
-    var bw = std.io.bufferedWriter(file.writer());
-    const w = bw.writer();
-    w.print("P6\n{d} {d}\n255\n", .{ platform.width, platform.height }) catch return;
+    const header = std.fmt.bufPrint(&ppm, "P6\n{d} {d}\n255\n", .{ platform.width, platform.height }) catch return;
+    var n = header.len;
     for (last) |px| {
-        w.writeAll(&.{ @truncate(px >> 16), @truncate(px >> 8), @truncate(px) }) catch return;
+        ppm[n] = @truncate(px >> 16);
+        ppm[n + 1] = @truncate(px >> 8);
+        ppm[n + 2] = @truncate(px);
+        n += 3;
     }
-    bw.flush() catch return;
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = "doomball.ppm", .data = ppm[0..n] }) catch return;
 }

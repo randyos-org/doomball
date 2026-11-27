@@ -12,29 +12,29 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption(Backend, "backend", backend);
 
-    const exe = b.addExecutable(.{
-        .name = "doomball",
+    const root = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addOptions("build_options", options);
+    root.addOptions("build_options", options);
     if (backend == .win32) {
-        exe.subsystem = .Windows;
-        exe.linkSystemLibrary("user32");
-        exe.linkSystemLibrary("gdi32");
-        exe.linkSystemLibrary("winmm");
+        root.linkSystemLibrary("user32", .{});
+        root.linkSystemLibrary("gdi32", .{});
+        root.linkSystemLibrary("winmm", .{});
     }
+    const exe = b.addExecutable(.{ .name = "doomball", .root_module = root });
+    if (backend == .win32) exe.subsystem = .windows;
     b.installArtifact(exe);
 
     const run = b.addRunArtifact(exe);
-    if (b.args) |args| run.addArgs(args);
+    if (b.option(u32, "frames", "Headless backend: number of frames to run")) |n| run.addArg(b.fmt("{d}", .{n}));
     b.step("run", "Run the game").dependOn(&run.step);
 
-    const tests = b.addTest(.{
+    const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-    });
+    }) });
     b.step("test", "Run unit tests").dependOn(&b.addRunArtifact(tests).step);
 }

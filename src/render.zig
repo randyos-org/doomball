@@ -91,7 +91,7 @@ fn glyph(ch: u8) ?*const [15]u8 {
 }
 
 test "canvas clips and draws" {
-    var buf = [_]u32{0} ** 16;
+    var buf: [16]u32 = @splat(0);
     const c = Canvas{ .pixels = &buf, .w = 4, .h = 4 };
     c.put(-1, 0, 1);
     c.put(4, 0, 1);

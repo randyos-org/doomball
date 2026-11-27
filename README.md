@@ -1,6 +1,6 @@
 # doomball
 
-Doom-themed pinball, written in Zig (developed against Zig 0.13.0). Shoot the
+Doom-themed pinball, written in Zig (requires Zig 0.17.1). Shoot the
 ball past demon bumpers and keep it out of the drain.
 
 ## Build & run
@@ -23,7 +23,7 @@ reads a small `Input` struct. A port only implements the `Platform` struct in
 
 - `src/platform_win32.zig` – Windows (Win32 + GDI, no dependencies)
 - `src/platform_headless.zig` – scripted input, writes `doomball.ppm`
-  (default on non-Windows; `zig build run -- <frames>`)
+  (default on non-Windows; `zig build run -Dframes=<n>`)
 
 Select a backend with `-Dbackend=win32|headless`, and add new ones in `build.zig`/`src/main.zig`.
 

@@ -1,18 +1,21 @@
 //! Windows backend using plain Win32 + GDI (no third-party dependencies).
 const std = @import("std");
-const win = std.os.windows;
 const platform = @import("platform.zig");
 
-const WINAPI = win.WINAPI;
-const HWND = win.HWND;
-const HINSTANCE = win.HINSTANCE;
+const WINAPI: std.builtin.CallingConvention = .winapi;
+const HWND = *anyopaque;
+const HINSTANCE = *anyopaque;
+const HDC = *anyopaque;
+const WPARAM = usize;
+const LPARAM = isize;
+const LRESULT = isize;
 
 const scale = 3;
 
-const WNDPROC = *const fn (HWND, u32, win.WPARAM, win.LPARAM) callconv(WINAPI) win.LRESULT;
+const WNDPROC = *const fn (HWND, u32, WPARAM, LPARAM) callconv(WINAPI) LRESULT;
 const POINT = extern struct { x: i32, y: i32 };
 const RECT = extern struct { left: i32, top: i32, right: i32, bottom: i32 };
-const MSG = extern struct { hwnd: ?HWND, message: u32, wParam: win.WPARAM, lParam: win.LPARAM, time: u32, pt: POINT };
+const MSG = extern struct { hwnd: ?HWND, message: u32, wParam: WPARAM, lParam: LPARAM, time: u32, pt: POINT };
 const WNDCLASSEXW = extern struct {
     cbSize: u32 = @sizeOf(WNDCLASSEXW),
     style: u32 = 0,
@@ -44,18 +47,20 @@ const BITMAPINFOHEADER = extern struct {
 extern "kernel32" fn GetModuleHandleW(?[*:0]const u16) callconv(WINAPI) ?HINSTANCE;
 extern "user32" fn RegisterClassExW(*const WNDCLASSEXW) callconv(WINAPI) u16;
 extern "user32" fn CreateWindowExW(u32, [*:0]const u16, [*:0]const u16, u32, i32, i32, i32, i32, ?HWND, ?*anyopaque, ?HINSTANCE, ?*anyopaque) callconv(WINAPI) ?HWND;
-extern "user32" fn DefWindowProcW(HWND, u32, win.WPARAM, win.LPARAM) callconv(WINAPI) win.LRESULT;
+extern "user32" fn DefWindowProcW(HWND, u32, WPARAM, LPARAM) callconv(WINAPI) LRESULT;
 extern "user32" fn DestroyWindow(HWND) callconv(WINAPI) i32;
 extern "user32" fn PostQuitMessage(i32) callconv(WINAPI) void;
 extern "user32" fn PeekMessageW(*MSG, ?HWND, u32, u32, u32) callconv(WINAPI) i32;
 extern "user32" fn TranslateMessage(*const MSG) callconv(WINAPI) i32;
-extern "user32" fn DispatchMessageW(*const MSG) callconv(WINAPI) win.LRESULT;
+extern "user32" fn DispatchMessageW(*const MSG) callconv(WINAPI) LRESULT;
 extern "user32" fn ShowWindow(HWND, i32) callconv(WINAPI) i32;
 extern "user32" fn AdjustWindowRect(*RECT, u32, i32) callconv(WINAPI) i32;
 extern "user32" fn LoadCursorW(?HINSTANCE, usize) callconv(WINAPI) ?*anyopaque;
-extern "user32" fn GetDC(HWND) callconv(WINAPI) ?win.HDC;
-extern "user32" fn ReleaseDC(HWND, win.HDC) callconv(WINAPI) i32;
-extern "gdi32" fn StretchDIBits(win.HDC, i32, i32, i32, i32, i32, i32, i32, i32, *const anyopaque, *const BITMAPINFOHEADER, u32, u32) callconv(WINAPI) i32;
+extern "user32" fn GetDC(HWND) callconv(WINAPI) ?HDC;
+extern "user32" fn ReleaseDC(HWND, HDC) callconv(WINAPI) i32;
+extern "gdi32" fn StretchDIBits(HDC, i32, i32, i32, i32, i32, i32, i32, i32, *const anyopaque, *const BITMAPINFOHEADER, u32, u32) callconv(WINAPI) i32;
+extern "kernel32" fn GetTickCount64() callconv(WINAPI) u64;
+extern "kernel32" fn Sleep(u32) callconv(WINAPI) void;
 extern "winmm" fn timeBeginPeriod(u32) callconv(WINAPI) u32;
 extern "winmm" fn timeEndPeriod(u32) callconv(WINAPI) u32;
 
@@ -78,7 +83,7 @@ const VK_LSHIFT = 0xA0;
 const VK_RSHIFT = 0xA1;
 
 var hwnd: ?HWND = null;
-var keys = [_]bool{false} ** 256;
+var keys: [256]bool = @splat(false);
 var quit = false;
 
 pub const impl = platform.Platform{
@@ -90,7 +95,7 @@ pub const impl = platform.Platform{
     .present = present,
 };
 
-fn wndProc(h: HWND, msg: u32, wp: win.WPARAM, lp: win.LPARAM) callconv(WINAPI) win.LRESULT {
+fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
     switch (msg) {
         WM_KEYDOWN, WM_SYSKEYDOWN => {
             if (wp < keys.len) keys[wp] = true;
@@ -137,11 +142,11 @@ fn shutdown() void {
 }
 
 fn ticksMs() u64 {
-    return @intCast(std.time.milliTimestamp());
+    return GetTickCount64();
 }
 
 fn sleepMs(ms: u32) void {
-    std.time.sleep(@as(u64, ms) * std.time.ns_per_ms);
+    Sleep(ms);
 }
 
 fn pollInput() platform.Input {
