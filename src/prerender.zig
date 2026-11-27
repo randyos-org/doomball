@@ -209,7 +209,7 @@ test "the background shows the table, its bumpers and their lit patches" {
         }
     }
     try std.testing.expect(found);
-    // the middle of the pit is lava, shining at full light
+    // the middle of the pit is sludge, shining at full light
     const pit = bg.cam.project(vec.v3(184, 400, 0));
     const pi = @as(usize, @intFromFloat(pit.y)) * w + @as(usize, @intFromFloat(pit.x));
     try std.testing.expectEqual(on_floor, bg.obj[pi]);

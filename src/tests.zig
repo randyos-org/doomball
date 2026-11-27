@@ -4,9 +4,11 @@ test {
     _ = @import("frame.zig");
     _ = @import("prerender.zig");
     _ = @import("scene.zig");
+    _ = @import("sprites.zig");
     _ = @import("camera.zig");
     _ = @import("raycast.zig");
     _ = @import("game.zig");
+    _ = @import("demons.zig");
     _ = @import("layout.zig");
     _ = @import("missions.zig");
     _ = @import("palette.zig");
