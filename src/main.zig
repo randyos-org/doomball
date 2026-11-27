@@ -2,6 +2,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 const platform = @import("platform.zig");
 const game = @import("game.zig");
+const frame = @import("frame.zig");
 
 const backend = switch (build_options.backend) {
     .win32 => @import("platform_win32.zig"),
@@ -21,6 +22,10 @@ pub fn main(init: std.process.Init) !void {
         if (args.len > 1) backend.max_frames = std.fmt.parseInt(u64, args[1], 10) catch backend.max_frames;
     }
 
+    // the table is rendered before the window opens, which would not answer meanwhile
+    var renderer = try frame.Renderer.init(init.gpa);
+    defer renderer.deinit(init.gpa);
+
     try p.init();
     defer p.shutdown();
 
@@ -30,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
         const in = p.pollInput();
         if (in.quit) break;
         g.update(in, 1.0 / 60.0);
-        g.render(&fb);
+        renderer.draw(&g, &fb);
         p.present(&fb);
 
         next += frame_ms;

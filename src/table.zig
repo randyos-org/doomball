@@ -61,6 +61,8 @@ fn mirror(p: V2) V2 {
 // slingshot corners, left side: top, bottom, inner
 const sling_l = [3]V2{ v2(70, 540), v2(70, 616), v2(104, 642) };
 const sling_r = [3]V2{ mirror(sling_l[0]), mirror(sling_l[1]), mirror(sling_l[2]) };
+/// The slingshots' bodies, for the renderer.
+pub const slings = [2][3]V2{ sling_l, sling_r };
 
 pub const walls = blk: {
     var w: [arch_steps + 32]Wall = undefined;

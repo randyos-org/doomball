@@ -6,7 +6,7 @@ The repository's setup follows skein (chasingdaylight/skein), after zfls (cesium
 
 ## What doomball is
 
-Doom-themed pinball in Zig; [docs/design.md](docs/design.md) is where it is going (the 2.5D table, missions, demons, keys, sound). All art is original: `doom1.wad` (kept out of git) is a style reference only, since its license forbids derivative works. The game core (`src/game.zig`, `src/render.zig`) draws into a framebuffer and reads an `Input` snapshot; each platform backend (`src/platform_*.zig`) implements `Platform` (`src/platform.zig`). Windows has a Win32 front end; every other platform builds the headless backend, which plays scripted input and writes `doomball.ppm`.
+Doom-themed pinball in Zig; [docs/design.md](docs/design.md) is where it is going (the 2.5D table, missions, demons, keys, sound). All art is original: `doom1.wad` (kept out of git) is a style reference only, since its license forbids derivative works. The game core (rules `src/game.zig`, physics `src/physics.zig`, the table `src/table.zig`, the renderer `src/frame.zig` over `src/prerender.zig`) draws into a framebuffer and reads an `Input` snapshot; each platform backend (`src/platform_*.zig`) implements `Platform` (`src/platform.zig`). Windows has a Win32 front end; every other platform builds the headless backend, which plays scripted input and writes `doomball.ppm`.
 
 ## Rules
 

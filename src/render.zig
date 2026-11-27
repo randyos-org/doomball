@@ -81,7 +81,7 @@ const letters = [26]*const [15]u8{
     "111001010100111",
 };
 
-fn glyph(ch: u8) ?*const [15]u8 {
+pub fn glyph(ch: u8) ?*const [15]u8 {
     return switch (ch) {
         '0'...'9' => digits[ch - '0'],
         'A'...'Z' => letters[ch - 'A'],
