@@ -13,10 +13,15 @@ zig build test                     # unit tests
 
 Every push to `main`, including a merged pull request, runs the Windows release
 workflow. It tests the game, builds an optimized Windows executable with Zig
-0.17.1, and creates a GitHub Release with a `v-main-<commit SHA>` tag pointing
-to the built commit. The release includes `doomball-windows-x86_64.exe`.
-Pushing a version tag such as `v1.0.0` also runs the workflow and publishes
-the executable on a release for that existing tag.
+0.17.1, and publishes `doomball-windows-x86_64.exe` to a GitHub Release. Its
+tag is `v` followed by the `.version` in `build.zig.zon` (initially `v1.0.0`)
+and points to the tested commit.
+
+Bump `.version` to the next `MAJOR.MINOR.PATCH` before merging a new release.
+If that tag already points to a different commit, the workflow builds and
+tests but does not publish or move the tag. A rerun for the tagged commit can
+retry publishing. Pushing a `v*` tag also runs the workflow; the tag must
+match the version in the tagged commit's `build.zig.zon`.
 
 Controls: `Space` hold/release = plunger, `Left`/`Z`/`Shift` and
 `Right`/`/`/`Shift` = flippers, `Enter`/`Space` = restart after game over, `Esc` = quit.

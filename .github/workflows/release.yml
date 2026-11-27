@@ -16,6 +16,33 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^[[:space:]]*\.version = "([^"]+)",[[:space:]]*$/\1/p' build.zig.zon)
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error file=build.zig.zon::Expected one MAJOR.MINOR.PATCH version."
+            exit 1
+          fi
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match $tag in build.zig.zon."
+            exit 1
+          fi
+          publish=true
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+            tagged_commit=$(git rev-parse "refs/tags/$tag^{commit}")
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "::warning::Tag $tag already points to a different commit; testing only. Bump .version to release this commit."
+              publish=false
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,10 +64,22 @@ jobs:
       - name: Stage release asset
         run: Copy-Item zig-out/bin/doomball.exe doomball-windows-x86_64.exe
 
+      - name: Tag the tested commit
+        if: steps.version.outputs.publish == 'true' && github.ref_type == 'branch'
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if ! git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
+          fi
+
       - name: Publish GitHub Release
+        if: steps.version.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v-main-{0}', github.sha) }}
+          tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: doomball-windows-x86_64.exe
