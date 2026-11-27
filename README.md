@@ -1,6 +1,6 @@
 # Doomball
 
-Doom-themed pinball, written in Zig (requires Zig 0.17.1). Shoot the ball past demon bumpers and keep it out of the drain.
+Doom-themed pinball, written in Zig (requires Zig 0.17.1): a table in prerendered 2.5D with a status panel beside it, in the style of the classic Windows pinball games, with art and sound of our own in the spirit of early-90s shooters.
 
 ## Build & run
 
@@ -10,7 +10,14 @@ zig build -Dtarget=x86_64-windows  # cross-compile a Windows exe
 zig build test                     # unit tests
 ```
 
-Controls: `Space` hold/release = plunger, `Left`/`Z`/`Shift` and `Right`/`/`/`Shift` = flippers, `Enter`/`Space` = restart after game over, `Esc` = quit.
+Controls: `Space` hold/release = plunger, `Left`/`Z`/`Left Shift` and `Right`/`/`/`Right Shift` = flippers, `Enter` = new game after game over, `Esc` = quit.
+
+## How to play
+
+- **Missions:** hit the blinking green target to start one: Bumper Barrage, Run the Lanes, Purge the Pit, Find the Keys or Hold the Line. Each has a goal and a time limit (Hold the Line is lost by draining). Finishing one promotes you, Private to General, for a bonus that grows with your rank.
+- **Demons** roam the pit of toxic sludge: hit them with the ball to slay them (a horned brute takes three hits, a bone crawler two). More come as your rank rises.
+- **Keys and multiball:** the red, blue and yellow targets on the left hold their key; with all three the gate on the right opens. A ball in the lock starts a three-ball multiball, with a ball save at its start and double bumper points.
+- **Lanes:** roll over all three top lanes for a bonus.
 
 ## Releases
 
@@ -20,9 +27,9 @@ Work goes on a branch from `dev` and reaches `dev` through a pull request; `main
 
 ## Portability
 
-Like doomgeneric, the game core (the rules in `src/game.zig`, the physics in `src/physics.zig`, the renderer in `src/frame.zig` and `src/prerender.zig`, the panel in `src/panel.zig`) is fully platform independent: it renders into a 640x480 `0x00RRGGBB` framebuffer (the table view and a status panel) and reads a small `Input` struct. A port only implements the `Platform` struct in `src/platform.zig` (init, shutdown, ticks, sleep, poll input, present):
+Like doomgeneric, the game core (the rules in `src/game.zig`, the physics in `src/physics.zig`, the renderer in `src/frame.zig` and `src/prerender.zig`, the panel in `src/panel.zig`) is fully platform independent: it renders into a 640x480 `0x00RRGGBB` framebuffer (the table view and a status panel) and reads a small `Input` struct. A port only implements the `Platform` struct in `src/platform.zig` (init, shutdown, ticks, sleep, poll input, present, queue audio):
 
-- `src/platform_win32.zig`: Windows (Win32 + GDI, no dependencies)
+- `src/platform_win32.zig`: Windows (Win32, GDI and winmm, no dependencies)
 - `src/platform_headless.zig`: scripted input, writes `doomball.ppm` (default on non-Windows; `zig build run -Dframes=<n>`, or `-Dbackend=headless` on Windows)
 
 Select a backend with `-Dbackend=win32|headless`, and add new ones in `build.zig`/`src/main.zig`.
