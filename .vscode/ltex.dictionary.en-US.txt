@@ -38,6 +38,9 @@ SYSKEYUP
 texel
 texels
 Trunc
+Unprepare
+WAVEHDR
+WHDR
 winmm
 WNDCLASSEXW
 WNDPROC

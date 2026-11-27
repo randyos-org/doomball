@@ -4,6 +4,8 @@
 
 pub const width = 640;
 pub const height = 480;
+/// 16-bit mono PCM at this rate
+pub const audio_rate = 22050;
 
 pub const Input = struct {
     left: bool = false,
@@ -24,4 +26,6 @@ pub const Platform = struct {
     pollInput: *const fn () Input,
     /// Show a frame of 0x00RRGGBB pixels, row-major, `width * height` entries.
     present: *const fn (pixels: []const u32) void,
+    /// Queue a frame's sound; dropped when the device is behind or absent.
+    queueAudio: *const fn (samples: []const i16) void,
 };

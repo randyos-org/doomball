@@ -61,6 +61,34 @@ extern "kernel32" fn GetTickCount64() callconv(WINAPI) u64;
 extern "kernel32" fn Sleep(u32) callconv(WINAPI) void;
 extern "winmm" fn timeBeginPeriod(u32) callconv(WINAPI) u32;
 extern "winmm" fn timeEndPeriod(u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutOpen(*?*anyopaque, u32, *const WAVEFORMATEX, usize, usize, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutPrepareHeader(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutUnprepareHeader(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutWrite(*anyopaque, *WAVEHDR, u32) callconv(WINAPI) u32;
+extern "winmm" fn waveOutReset(*anyopaque) callconv(WINAPI) u32;
+extern "winmm" fn waveOutClose(*anyopaque) callconv(WINAPI) u32;
+
+const WAVEFORMATEX = extern struct {
+    wFormatTag: u16 = 1,
+    nChannels: u16 = 1,
+    nSamplesPerSec: u32 = platform.audio_rate,
+    nAvgBytesPerSec: u32 = platform.audio_rate * 2,
+    nBlockAlign: u16 = 2,
+    wBitsPerSample: u16 = 16,
+    cbSize: u16 = 0,
+};
+const WAVEHDR = extern struct {
+    lpData: [*]u8,
+    dwBufferLength: u32,
+    dwBytesRecorded: u32 = 0,
+    dwUser: usize = 0,
+    dwFlags: u32 = 0,
+    dwLoops: u32 = 0,
+    lpNext: ?*WAVEHDR = null,
+    reserved: usize = 0,
+};
+const WAVE_MAPPER: u32 = 0xFFFFFFFF;
+const WHDR_DONE = 1;
 
 const WM_DESTROY = 0x0002;
 const WM_CLOSE = 0x0010;
@@ -82,6 +110,14 @@ const VK_LSHIFT = 0xA0;
 const VK_RSHIFT = 0xA1;
 
 var hwnd: ?HWND = null;
+
+// sound: a ring of buffers handed to waveOut, refilled once played
+const audio_buffers = 8;
+const audio_cap = 2048;
+var wave: ?*anyopaque = null;
+var buffers: [audio_buffers][audio_cap]i16 = undefined;
+var headers: [audio_buffers]WAVEHDR = undefined;
+var queued: [audio_buffers]bool = @splat(false);
 var keys: [256]bool = @splat(false);
 var quit = false;
 
@@ -92,6 +128,7 @@ pub const impl = platform.Platform{
     .sleepMs = sleepMs,
     .pollInput = pollInput,
     .present = present,
+    .queueAudio = queueAudio,
 };
 
 fn wndProc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) callconv(WINAPI) LRESULT {
@@ -144,10 +181,55 @@ fn init() anyerror!void {
     if (hwnd == null) return error.CreateWindowFailed;
     _ = ShowWindow(hwnd.?, 5);
     _ = timeBeginPeriod(1);
+    openAudio();
 }
 
 fn shutdown() void {
+    if (wave) |w| {
+        _ = waveOutReset(w);
+        for (&headers, &queued) |*hd, *q| if (q.*) {
+            _ = waveOutUnprepareHeader(w, hd, @sizeOf(WAVEHDR));
+            q.* = false;
+        };
+        _ = waveOutClose(w);
+        wave = null;
+    }
     _ = timeEndPeriod(1);
+}
+
+/// No sound device leaves the game silent.
+fn openAudio() void {
+    const fmt = WAVEFORMATEX{};
+    if (waveOutOpen(&wave, WAVE_MAPPER, &fmt, 0, 0, 0) != 0) {
+        wave = null;
+        return;
+    }
+    // a little silence ahead, so a late frame does not starve the device
+    const silence: [512]i16 = @splat(0);
+    queueAudio(&silence);
+    queueAudio(&silence);
+}
+
+fn queueAudio(samples: []const i16) void {
+    const w = wave orelse return;
+    var free: ?usize = null;
+    for (&headers, &queued, 0..) |*hd, *q, i| {
+        if (q.* and hd.dwFlags & WHDR_DONE != 0) {
+            _ = waveOutUnprepareHeader(w, hd, @sizeOf(WAVEHDR));
+            q.* = false;
+        }
+        if (!q.* and free == null) free = i;
+    }
+    const i = free orelse return;
+    const n = @min(samples.len, audio_cap);
+    @memcpy(buffers[i][0..n], samples[0..n]);
+    headers[i] = .{ .lpData = @ptrCast(&buffers[i]), .dwBufferLength = @intCast(n * 2) };
+    if (waveOutPrepareHeader(w, &headers[i], @sizeOf(WAVEHDR)) != 0) return;
+    if (waveOutWrite(w, &headers[i], @sizeOf(WAVEHDR)) != 0) {
+        _ = waveOutUnprepareHeader(w, &headers[i], @sizeOf(WAVEHDR));
+        return;
+    }
+    queued[i] = true;
 }
 
 fn ticksMs() u64 {

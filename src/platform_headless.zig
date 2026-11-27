@@ -15,7 +15,10 @@ pub const impl = platform.Platform{
     .sleepMs = sleepMs,
     .pollInput = pollInput,
     .present = present,
+    .queueAudio = queueAudio,
 };
+
+fn queueAudio(_: []const i16) void {}
 
 fn init() anyerror!void {}
 

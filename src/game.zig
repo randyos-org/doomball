@@ -7,6 +7,7 @@ const table = @import("table.zig");
 const missions = @import("missions.zig");
 const demons = @import("demons.zig");
 const multiball = @import("multiball.zig");
+const audio = @import("audio.zig");
 
 pub const start_balls = 3;
 
@@ -27,6 +28,7 @@ pub const Message = struct {
 pub const max_message = 15;
 
 const key_names = [3][]const u8{ "RED KEY", "BLUE KEY", "YELLOW KEY" };
+const max_cues = 16;
 pub const log_lines = 6;
 
 /// Points for each event.
@@ -61,6 +63,9 @@ pub const Game = struct {
     slain: u32 = 0,
     /// newest first
     log: [log_lines]Message = @splat(.{}),
+    /// the sounds of this frame
+    cues: [max_cues]audio.Cue = undefined,
+    n_cues: usize = 0,
 
     pub fn init() Game {
         var g = Game{};
@@ -78,7 +83,20 @@ pub const Game = struct {
         @memcpy(self.log[0].text[0..n], text[0..n]);
     }
 
+    pub fn cueList(self: *const Game) []const audio.Cue {
+        return self.cues[0..self.n_cues];
+    }
+
+    fn cue(self: *Game, c: audio.Cue) void {
+        // one of each a frame is enough
+        for (self.cueList()) |have| if (have == c) return;
+        if (self.n_cues == max_cues) return;
+        self.cues[self.n_cues] = c;
+        self.n_cues += 1;
+    }
+
     pub fn update(self: *Game, in: platform.Input, dt: f32) void {
+        self.n_cues = 0;
         self.time += dt;
         for (&self.log) |*m| m.age += dt;
         const start_edge = in.start and !self.prev_start;
@@ -95,7 +113,7 @@ pub const Game = struct {
         if (in.plunger) {
             self.plunger = @min(1, self.plunger + dt * 1.2);
         } else if (self.plunger > 0) {
-            _ = self.world.launch(self.plunger);
+            if (self.world.launch(self.plunger)) self.cue(.launch);
             self.plunger = 0;
         }
 
@@ -109,9 +127,11 @@ pub const Game = struct {
             self.balls_left -|= 1;
             if (self.balls_left == 0) {
                 self.phase = .game_over;
+                self.cue(.game_over);
                 self.say("GAME OVER");
                 self.say("ENTER: NEW GAME");
             } else {
+                self.cue(.drain);
                 self.say("BALL LOST");
                 self.missionOutcome(self.missions.drained());
                 self.serve();
@@ -124,15 +144,18 @@ pub const Game = struct {
             .bumper => {
                 // doubled during multiball
                 self.score += if (self.multiball.on) 2 * points.bumper else points.bumper;
+                self.cue(.bumper);
                 self.bumper_flash[e.id] = 0.15;
                 self.missionOutcome(self.missions.count(.barrage, 1));
             },
             .sling => {
                 self.score += points.sling;
+                self.cue(.sling);
                 self.sling_flash[e.id] = 0.12;
             },
             .rollover => {
                 self.score += points.rollover;
+                self.cue(.rollover);
                 self.lanes_lit[e.id] = true;
                 if (std.mem.allEqual(bool, &self.lanes_lit, true)) {
                     self.score += points.lanes_done;
@@ -146,17 +169,22 @@ pub const Game = struct {
                 switch (table.targets[e.id].kind) {
                     .mission => {
                         self.score += points.mission_target;
-                        if (self.missions.start()) |s| self.say(s.name);
+                        if (self.missions.start()) |s| {
+                            self.say(s.name);
+                            self.cue(.mission_start);
+                        } else self.cue(.target);
                     },
                     .key_red, .key_blue, .key_yellow => |k| {
                         self.score += points.target;
                         const i = @backingInt(k);
+                        self.cue(if (self.keys[i]) .target else .key);
                         if (!self.keys[i]) {
                             self.keys[i] = true;
                             self.say(key_names[i]);
                             self.missionOutcome(self.missions.count(.keys, 1));
                             if (std.mem.allEqual(bool, &self.keys, true) and self.world.gate_closed and !self.multiball.on) {
                                 self.world.gate_closed = false;
+                                self.cue(.gate);
                                 self.say("GATE OPEN");
                             }
                         }
@@ -165,8 +193,12 @@ pub const Game = struct {
             },
             .demon => switch (self.demons.hit(e.id, self.world.balls[e.ball].p)) {
                 .none => {},
-                .hurt => self.score += demons.hit_points,
+                .hurt => {
+                    self.score += demons.hit_points;
+                    self.cue(.demon_hurt);
+                },
                 .slain => {
+                    self.cue(.demon_slain);
                     self.score += self.demons.list[e.id].kind.points();
                     self.slain += 1;
                     self.say("DEMON SLAIN");
@@ -176,11 +208,17 @@ pub const Game = struct {
             .lock => if (!self.multiball.on) {
                 self.score += points.lock;
                 self.multiball.start();
+                self.cue(.lock);
+                self.cue(.multiball);
                 self.keys = @splat(false);
                 self.say("MULTIBALL!");
             },
-            .drain => if (self.multiball.saved()) self.say("BALL SAVED"),
-            .wall, .rubber, .gate, .flipper, .flipper_up => {},
+            .drain => if (self.multiball.saved()) {
+                self.cue(.saved);
+                self.say("BALL SAVED");
+            },
+            .flipper_up => self.cue(.flipper),
+            .wall, .rubber, .gate, .flipper => if (e.speed > 180) self.cue(.knock),
         }
     }
 
@@ -189,11 +227,15 @@ pub const Game = struct {
             .none => {},
             .done => {
                 self.score += missions.bonus(self.missions.rank);
+                self.cue(.promoted);
                 self.say("MISSION DONE");
                 self.say("PROMOTED TO");
                 self.say(missions.ranks[self.missions.rank]);
             },
-            .failed => self.say("MISSION FAILED"),
+            .failed => {
+                self.cue(.mission_failed);
+                self.say("MISSION FAILED");
+            },
         }
     }
 
@@ -304,6 +346,15 @@ test "the three keys open the gate, and the lock starts multiball" {
     for (0..60 * 3) |_| g.update(.{}, frame_dt);
     try std.testing.expect(g.world.activeBalls() >= 2);
     try std.testing.expectEqual(@as(u8, start_balls), g.balls_left);
+}
+
+test "events make their sounds, once a frame each" {
+    var g = Game.init();
+    g.update(.{}, frame_dt);
+    g.handle(.{ .kind = .bumper });
+    g.handle(.{ .kind = .bumper, .id = 1 });
+    g.handle(.{ .kind = .flipper_up });
+    try std.testing.expectEqualSlices(audio.Cue, &.{ .bumper, .flipper }, g.cueList());
 }
 
 test "completing the top lanes scores the bonus and clears them" {

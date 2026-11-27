@@ -1,4 +1,5 @@
 test {
+    _ = @import("audio.zig");
     _ = @import("font.zig");
     _ = @import("panel.zig");
     _ = @import("frame.zig");
