@@ -3,11 +3,15 @@
     .version = "1.1.1",
     .fingerprint = 0x810bd410a6c55539, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.1",
-    .dependencies = .{},
+    // rstd: a git submodule, as zfls has it
+    .dependencies = .{
+        .rstd = .{ .path = "vendor/rstd" },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
+        "vendor/rstd",
         "LICENSE",
         "README.md",
     },

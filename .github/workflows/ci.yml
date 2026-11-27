@@ -158,6 +158,9 @@ jobs:
         os: ${{ fromJSON(needs.changes.outputs.platforms) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # rstd, and its own submodule
+          submodules: recursive
 
       - uses: randyos-org/setup-zig@node24  # v2.2.1 on Node.js 24, until upstream releases it
         with:
@@ -209,6 +212,9 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # rstd, and its own submodule
+          submodules: recursive
 
       - uses: randyos-org/setup-zig@node24  # v2.2.1 on Node.js 24, until upstream releases it
         with:
