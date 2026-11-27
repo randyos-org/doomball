@@ -24,7 +24,14 @@ pub const Ball = struct {
     locked: bool = false,
     /// the rollovers it is over, a bit each
     over: u8 = 0,
+    /// seconds it has sat still, for the ball search
+    still: f32 = 0,
 };
+
+/// A ball still this long, off the plunger and out of the lock, is nudged,
+/// as real machines search for a stuck ball.
+pub const search_after: f32 = 3;
+const search_kick = v2(0, -260);
 
 pub const Circle = struct { c: V2, r: f32 };
 
@@ -102,11 +109,36 @@ pub const World = struct {
     /// One frame: the flippers, then `substeps` steps of the balls.
     pub fn step(self: *World, left: bool, right: bool, dt: f32) void {
         self.n_events = 0;
+        for (&self.balls) |*b| self.search(b, dt);
         for (&self.flippers, [2]bool{ left, right }, 0..) |*f, pressed, i| {
             if (f.step(pressed, dt)) self.emit(.{ .kind = .flipper_up, .id = @intCast(i) });
         }
         const h = dt / substeps;
         for (0..substeps) |_| self.substep(h);
+    }
+
+    /// Whether the ball waits where the player can move it: on the
+    /// plunger, or cradled on a flipper.
+    pub fn waiting(self: *const World, b: Ball) bool {
+        if (b.p.sub(table.plunger_rest).len() < 4) return true;
+        for (self.flippers) |f| {
+            const t = vec.nearestOnSegment(b.p, f.spec.pivot, f.tip());
+            const reach = table.flipper_r0 + table.ball_r + 4;
+            if (b.p.sub(f.spec.pivot.mix(f.tip(), t)).len() < reach) return true;
+        }
+        return false;
+    }
+
+    fn search(self: *const World, b: *Ball, dt: f32) void {
+        if (!b.active or b.locked or self.waiting(b.*) or b.v.len() > 6) {
+            b.still = 0;
+            return;
+        }
+        b.still += dt;
+        if (b.still < search_after) return;
+        // up, and toward the middle of the playfield
+        b.v = search_kick.add(v2(if (b.p.x > table.axis_x) -120 else 120, 0));
+        b.still = 0;
     }
 
     fn emit(self: *World, e: Event) void {
@@ -320,11 +352,14 @@ test "a bumper kicks the ball away and says so" {
     try std.testing.expect(w.balls[0].v.y < 0);
 }
 
-test "the lane gate lets the ball up but not back down" {
+test "the lane gate lets the ball up, and one falling on it rolls off to the playfield" {
     var w = World{};
-    w.balls[0] = .{ .active = true, .p = v2(370, 220), .v = v2(0, 100) };
-    for (0..30) |_| w.step(false, false, frame_dt);
-    try std.testing.expect(w.balls[0].p.y < 236);
+    w.balls[0] = .{ .active = true, .p = v2(370, 270), .v = v2(0, -900) };
+    for (0..10) |_| w.step(false, false, frame_dt);
+    try std.testing.expect(w.balls[0].p.y < 220);
+    w.balls[0] = .{ .active = true, .p = v2(370, 200), .v = v2(0, 100) };
+    for (0..90) |_| w.step(false, false, frame_dt);
+    try std.testing.expect(w.balls[0].p.x < table.field_right);
 }
 
 test "the lock holds a ball only once the gate is open" {
@@ -345,6 +380,15 @@ test "two balls bounce off each other" {
     w.balls[1] = .{ .active = true, .p = v2(180, 500), .v = v2(-300, 0) };
     for (0..6) |_| w.step(false, false, frame_dt);
     try std.testing.expect(w.balls[0].v.x < 0 and w.balls[1].v.x > 0);
+}
+
+test "a ball sitting still is nudged" {
+    var w = World{};
+    // wedged on top of a bumper and a post would do; any still ball will
+    w.balls[0] = .{ .active = true, .p = v2(184, 500), .still = search_after };
+    w.balls[0].v = v2(0, 0);
+    w.step(false, false, frame_dt);
+    try std.testing.expect(w.balls[0].v.y < -100);
 }
 
 test "rolling over a lane reports it once" {
