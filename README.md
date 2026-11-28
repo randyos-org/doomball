@@ -2,6 +2,8 @@
 
 Doom-themed pinball, written in Zig (requires Zig 0.17.1): a table in prerendered 2.5D with a status panel beside it, in the style of the classic Windows pinball games, with art and sound of our own in the spirit of early-90s shooters.
 
+![The Doomball table and its status panel, with a demon in the pit](docs/screenshot.png)
+
 ## Build & run
 
 ```sh
